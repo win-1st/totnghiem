@@ -1,0 +1,13 @@
+package thang.bida;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class BidaApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(BidaApplication.class, args);
+	}
+
+}
