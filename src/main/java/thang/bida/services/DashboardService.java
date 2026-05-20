@@ -199,9 +199,10 @@ public class DashboardService {
     public Map<String, Object> getUserStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
-        long adminCount = userRepository.countByRoles_Name(ERole.ADMIN);
-        long staffCount = userRepository.countByRoles_Name(ERole.STAFF);
-        long customerCount = userRepository.countByRoles_Name(ERole.CUSTOMER);
+        // SỬA: Dùng countByRole thay vì countByRoles_Name
+        long adminCount = userRepository.countByRole(Role.ADMIN);
+        long staffCount = userRepository.countByRole(Role.STAFF);
+        long customerCount = userRepository.countByRole(Role.CUSTOMER);
 
         LocalDateTime startOfMonth = YearMonth.now().atDay(1).atStartOfDay();
         long newUsersThisMonth = userRepository.countByCreatedAtAfter(startOfMonth);
@@ -230,8 +231,6 @@ public class DashboardService {
             for (Order order : recentOrders) {
                 Map<String, Object> activity = new HashMap<>();
                 activity.put("time", order.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm")));
-
-                // ✅ SỬA LỖI Ở ĐÂY
                 String employeeInfo = "Nhân viên #"
                         + (order.getEmployee() != null ? order.getEmployee().getId() : "Unknown");
                 activity.put("content", String.format("Đơn hàng #%s được tạo bởi %s",
@@ -253,15 +252,18 @@ public class DashboardService {
             }
         }
 
-        List<User> recentUsers = userRepository.findTop5ByCreatedAtAfterOrderByCreatedAtDesc(cutoff);
+        List<User> recentUsers = userRepository.findTop5ByOrderByCreatedAtDesc();
         if (recentUsers != null) {
             for (User user : recentUsers) {
-                Map<String, Object> activity = new HashMap<>();
-                activity.put("time", user.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm")));
-                activity.put("content", String.format("Người dùng mới: %s (%s)",
-                        user.getFullName(), user.getEmail()));
-                activity.put("color", "purple");
-                activities.add(activity);
+                if (user.getCreatedAt() != null && user.getCreatedAt().isAfter(cutoff)) {
+                    Map<String, Object> activity = new HashMap<>();
+                    activity.put("time", user.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm")));
+                    activity.put("content", String.format("Người dùng mới: %s (%s)",
+                            user.getFullName() != null ? user.getFullName() : user.getUsername(),
+                            user.getEmail()));
+                    activity.put("color", "purple");
+                    activities.add(activity);
+                }
             }
         }
 

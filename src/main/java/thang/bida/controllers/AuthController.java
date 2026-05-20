@@ -5,8 +5,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
@@ -18,25 +18,20 @@ import thang.bida.dto.LoginDto;
 import thang.bida.dto.RegisterDto;
 import thang.bida.dto.ResetPasswordRequest;
 import thang.bida.dto.VerifyOtpRequest;
-import thang.bida.model.ERole;
 import thang.bida.model.Role;
 import thang.bida.model.User;
-import thang.bida.repository.RoleRepository;
+import thang.bida.payload.response.JwtResponse;
+import thang.bida.payload.response.MessageResponse;
 import thang.bida.repository.UserRepository;
 import thang.bida.security.jwt.JwtUtils;
 import thang.bida.services.PasswordResetService;
 import thang.bida.services.UserDetailsImpl;
 import jakarta.validation.Valid;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.stream.Collectors; // ← QUAN TRỌNG: Thêm import này
 
 @RestController
 @RequestMapping("/api/auth")
@@ -44,162 +39,83 @@ import java.util.stream.Collectors;
 public class AuthController {
 
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
     private final AuthenticationManager authenticationManager;
     private final PasswordResetService passwordResetService;
 
     public AuthController(UserRepository userRepository,
-            RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             JwtUtils jwtUtils,
             AuthenticationManager authenticationManager,
             PasswordResetService passwordResetService) {
         this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
         this.authenticationManager = authenticationManager;
         this.passwordResetService = passwordResetService;
     }
 
-    // ✅ Health check
     @GetMapping("/health")
     public ResponseEntity<String> healthCheck() {
         return ResponseEntity.ok("Server is running! Auth controller is healthy.");
     }
 
-    // ✅ Register - CHỈ GIỮ 1 METHOD NÀY
     @PostMapping("/register")
-    public ResponseEntity<String> register(@RequestBody RegisterDto registerDto) {
-        System.out.println("=== REGISTER ===");
-        System.out.println("Username: " + registerDto.getUsername());
-        System.out.println("Email: " + registerDto.getEmail());
-        System.out.println("FullName: " + registerDto.getFullName());
-        System.out.println("Phone: " + registerDto.getPhone());
-
+    public ResponseEntity<?> register(@RequestBody RegisterDto registerDto) {
         if (userRepository.existsByUsername(registerDto.getUsername())) {
-            return new ResponseEntity<>("Username is taken!", HttpStatus.BAD_REQUEST);
+            return ResponseEntity.badRequest().body(new MessageResponse("Username is taken!"));
         }
-
         if (userRepository.existsByEmail(registerDto.getEmail())) {
-            return new ResponseEntity<>("Email is already in use!", HttpStatus.BAD_REQUEST);
+            return ResponseEntity.badRequest().body(new MessageResponse("Email is already in use!"));
         }
 
         User user = new User();
         user.setUsername(registerDto.getUsername());
         user.setEmail(registerDto.getEmail());
         user.setPassword(passwordEncoder.encode(registerDto.getPassword()));
-
-        // ✅ THÊM CÁC FIELD NÀY
         user.setFullName(registerDto.getFullName());
         user.setPhone(registerDto.getPhone());
         user.setAddress(registerDto.getAddress());
-        if (registerDto.getImageUrl() != null) {
-            user.setImageUrl(registerDto.getImageUrl());
+        user.setImageUrl(registerDto.getImageUrl());
+
+        // Xử lý role
+        String roleName = registerDto.getRole() != null ? registerDto.getRole().toUpperCase() : "CUSTOMER";
+        try {
+            Role role = Role.valueOf(roleName);
+            user.setRole(role);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(new MessageResponse("Invalid role: " + roleName));
         }
 
-        Set<Role> roles = new HashSet<>();
-
-        if (registerDto.getRoles() == null || registerDto.getRoles().isEmpty()) {
-            Role userRole = roleRepository.findByName(ERole.CUSTOMER)
-                    .orElseThrow(() -> new RuntimeException("Error: USER Role is not found."));
-            roles.add(userRole);
-            System.out.println("Assigning default CUSTOMER role");
-        } else {
-            for (String roleName : registerDto.getRoles()) {
-                try {
-                    String roleEnumName = "ROLE_" + roleName.toUpperCase();
-                    ERole roleEnum = ERole.valueOf(roleEnumName);
-                    Role role = roleRepository.findByName(roleEnum)
-                            .orElseThrow(() -> new RuntimeException("Error: Role " + roleName + " is not found."));
-                    roles.add(role);
-                    System.out.println("Assigning role: " + roleName);
-                } catch (IllegalArgumentException e) {
-                    System.out.println("Invalid role requested: " + roleName);
-                    return new ResponseEntity<>("Invalid role: " + roleName, HttpStatus.BAD_REQUEST);
-                }
-            }
-        }
-
-        user.setRoles(roles);
-        User savedUser = userRepository.save(user);
-
-        System.out.println("User registered successfully with ID: " + savedUser.getId());
-        System.out.println("Assigned roles: " + roles.stream()
-                .map(role -> role.getName().name())
-                .collect(Collectors.toList()));
-
-        return new ResponseEntity<>("User registered success!", HttpStatus.OK);
+        userRepository.save(user);
+        return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
     }
 
-    // ✅ Login với refresh token
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginDto loginDto) {
-        try {
-            System.out.println("🔐 LOGIN ATTEMPT ==================================");
-            System.out.println("Username: " + loginDto.getUsername());
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(loginDto.getUsername(), loginDto.getPassword()));
 
-            // Kiểm tra user
-            User user = userRepository.findByUsername(loginDto.getUsername())
-                    .orElseThrow(() -> {
-                        System.out.println("❌ USER NOT FOUND: " + loginDto.getUsername());
-                        return new RuntimeException("User not found");
-                    });
+        SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            System.out.println("✅ User found: " + user.getUsername());
-            System.out.println("👤 Full Name: " + user.getFullName());
-            System.out.println("👥 Roles count: " + user.getRoles().size());
-            user.getRoles().forEach(role -> System.out.println("   - Role: " + role.getName()));
+        String jwt = jwtUtils.generateJwtToken(authentication);
 
-            // Authentication
-            System.out.println("🔄 Attempting authentication...");
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(loginDto.getUsername(), loginDto.getPassword()));
+        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+        List<String> roles = List.of(userDetails.getRole());
 
-            System.out.println("🎉 Authentication SUCCESS!");
+        // roles)
+        JwtResponse jwtResponse = new JwtResponse(
+                jwt,
+                userDetails.getId(),
+                userDetails.getUsername(),
+                userDetails.getFullName(),
+                userDetails.getEmail(),
+                roles);
 
-            // Generate tokens
-            System.out.println("🔑 Generating JWT token...");
-            String jwt = jwtUtils.generateJwtToken(authentication);
-            String refreshToken = jwtUtils.generateRefreshToken(authentication);
-
-            System.out.println("✅ JWT Token generated, length: " + jwt.length());
-            System.out.println("✅ Refresh Token generated, length: " + refreshToken.length());
-
-            UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-            List<String> roles = userDetails.getAuthorities().stream()
-                    .map(item -> item.getAuthority())
-                    .collect(Collectors.toList());
-
-            System.out.println("✅ Login successful! User: " + userDetails.getUsername());
-            System.out.println("✅ Full Name: " + user.getFullName());
-            System.out.println("✅ Roles: " + roles);
-            System.out.println("==================================================");
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("token", jwt);
-            response.put("refreshToken", refreshToken);
-            response.put("type", "Bearer");
-            response.put("id", userDetails.getId());
-            response.put("username", userDetails.getUsername());
-            response.put("fullName", user.getFullName());
-            response.put("email", userDetails.getEmail());
-            response.put("roles", roles);
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            System.out.println("❌ LOGIN FAILED: " + e.getMessage());
-            e.printStackTrace();
-            System.out.println("==================================================");
-            return new ResponseEntity<>("Invalid username or password! Error: " + e.getMessage(),
-                    HttpStatus.UNAUTHORIZED);
-        }
+        return ResponseEntity.ok(jwtResponse);
     }
 
-    // ✅ Refresh Token
     @PostMapping("/refresh")
     public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> request) {
         try {
@@ -225,12 +141,8 @@ public class AuthController {
             User user = userRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            List<GrantedAuthority> authorities = user.getRoles().stream()
-                    .map(role -> (GrantedAuthority) () -> role.getName().name())
-                    .collect(Collectors.toList());
-
             Authentication authentication = new UsernamePasswordAuthenticationToken(
-                    user.getUsername(), null, authorities);
+                    user.getUsername(), null, List.of(() -> "ROLE_" + user.getRole().name()));
 
             String newAccessToken = jwtUtils.generateJwtToken(authentication);
             String newRefreshToken = jwtUtils.generateRefreshToken(authentication);
@@ -270,9 +182,7 @@ public class AuthController {
         response.put("imageUrl", user.getImageUrl());
         response.put("phone", user.getPhone());
         response.put("address", user.getAddress());
-        response.put("roles", user.getRoles().stream()
-                .map(r -> r.getName().name())
-                .toList());
+        response.put("role", user.getRole() != null ? user.getRole().name() : "CUSTOMER");
 
         return ResponseEntity.ok(response);
     }
@@ -381,12 +291,5 @@ public class AuthController {
             return ResponseEntity.badRequest().body(new ApiResponse(false,
                     "Không thể gửi lại mã OTP. Vui lòng thử lại."));
         }
-    }
-
-    @Data
-    @AllArgsConstructor
-    @NoArgsConstructor
-    private static class TokenResponse {
-        private String token;
     }
 }

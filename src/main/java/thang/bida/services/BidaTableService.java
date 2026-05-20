@@ -1,6 +1,7 @@
 package thang.bida.services;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import thang.bida.dto.TableDTO;
 import thang.bida.model.BidaTable;
@@ -30,16 +31,34 @@ public class BidaTableService {
         return tableRepository.findByStatus(BidaTable.TableStatus.FREE);
     }
 
+    @Transactional
     public BidaTable updateTableStatus(Long tableId, BidaTable.TableStatus status) {
         BidaTable table = tableRepository.findById(tableId)
-                .orElseThrow(() -> new RuntimeException("Table not found"));
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn với ID: " + tableId));
         table.setStatus(status);
         return tableRepository.save(table);
     }
 
-    // ✅ Thêm hàm này để tạo bàn mới
     public BidaTable createTable(BidaTable table) {
+        // Kiểm tra số bàn đã tồn tại
+        BidaTable existingTable = tableRepository.findByNumber(table.getNumber());
+        if (existingTable != null) {
+            throw new RuntimeException("Số bàn " + table.getNumber() + " đã tồn tại!");
+        }
         return tableRepository.save(table);
+    }
+
+    @Transactional
+    public void deleteTable(Long tableId) {
+        BidaTable table = tableRepository.findById(tableId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn với ID: " + tableId));
+
+        // Kiểm tra xem bàn có đang được sử dụng không
+        if (table.getStatus() == BidaTable.TableStatus.OCCUPIED) {
+            throw new RuntimeException("Không thể xóa bàn đang được sử dụng!");
+        }
+
+        tableRepository.delete(table);
     }
 
     public List<BidaTable> getFreeTables() {

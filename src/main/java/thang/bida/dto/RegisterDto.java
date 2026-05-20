@@ -13,4 +13,5 @@ public class RegisterDto {
     private String phone;
     private String address;
     private String imageUrl;
+    private String role;
 }

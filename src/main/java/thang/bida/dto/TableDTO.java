@@ -16,5 +16,4 @@ public class TableDTO {
     private Long currentOrderId;
     private LocalDateTime startTime;
 
-    // getter / setter
 }

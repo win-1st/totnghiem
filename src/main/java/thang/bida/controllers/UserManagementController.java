@@ -32,13 +32,13 @@ public class UserManagementController {
         this.userService = userService;
     }
 
-    // Danh sách nhân viên (MANAGER + STAFF)
+    // Danh sách nhân viên (STAFF)
     @GetMapping
     public ResponseEntity<List<User>> getAllStaffs() {
         return ResponseEntity.ok(userService.getAllStaffs());
     }
 
-    // Tạo nhân viên
+    // Tạo nhân viên - chỉ nhận 1 role
     @PostMapping
     public ResponseEntity<User> createStaff(@RequestBody CreateStaffRequest req) {
         return ResponseEntity.ok(
@@ -50,7 +50,7 @@ public class UserManagementController {
                         req.getPhone(),
                         req.getAddress(),
                         req.getImageUrl(),
-                        req.getRoles()));
+                        req.getRole())); // ← Truyền String role
     }
 
     // Cập nhật nhân viên
@@ -68,7 +68,7 @@ public class UserManagementController {
                         req.getPhone(),
                         req.getAddress(),
                         req.getImageUrl(),
-                        req.getRoles()));
+                        req.getRole())); // ← Truyền String role
     }
 
     // Khóa / mở tài khoản

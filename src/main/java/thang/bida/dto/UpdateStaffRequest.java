@@ -13,5 +13,5 @@ public class UpdateStaffRequest {
     private String phone;
     private String address;
     private String imageUrl;
-    private List<String> roles;
+    private String role;
 }

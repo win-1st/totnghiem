@@ -2,9 +2,8 @@ package thang.bida.security;
 
 import thang.bida.security.jwt.AuthEntryPointJwt;
 import thang.bida.security.jwt.AuthTokenFilter;
-import thang.bida.security.jwt.JwtUtils;
-import thang.bida.CustomUserDetailsService;
 
+import org.springframework.http.HttpMethod;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,12 +15,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
 import java.util.Arrays;
 
 @Configuration
@@ -32,86 +29,83 @@ public class SecurityConfig {
         private AuthEntryPointJwt unauthorizedHandler;
 
         @Autowired
-        private JwtUtils jwtUtils;
+        private AuthTokenFilter authTokenFilter;
 
-        @Autowired
-        private CustomUserDetailsService userDetailsService;
-
-        // ================= ĐĂNG KÝ BEAN AuthTokenFilter =================
-        @Bean
-        public AuthTokenFilter authTokenFilter() {
-                AuthTokenFilter authTokenFilter = new AuthTokenFilter();
-                authTokenFilter.setJwtUtils(jwtUtils);
-                authTokenFilter.setUserDetailsService(userDetailsService);
-                return authTokenFilter;
-        }
-
-        // ================= FILTER CHAIN =================
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-
                 http
                                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                                 .csrf(csrf -> csrf.disable())
-                                .exceptionHandling(ex -> ex
-                                                .authenticationEntryPoint(unauthorizedHandler))
+                                .exceptionHandling(ex -> ex.authenticationEntryPoint(unauthorizedHandler))
                                 .sessionManagement(session -> session
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                                 .authorizeHttpRequests(auth -> auth
-                                                .requestMatchers(
-                                                                "/api/auth/**" // CHO PHÉP TẤT CẢ /api/auth/*
-                                                ).permitAll()
-
-                                                .requestMatchers(
-                                                                "/swagger-ui/**",
-                                                                "/v3/api-docs/**",
-                                                                "/webjars/**",
-                                                                "/uploads/**",
-                                                                "/ws/**",
-                                                                "/api/chat/**",
-                                                                "/api/test/**")
+                                                // Public endpoints
+                                                .requestMatchers("/api/auth/**").permitAll()
+                                                .requestMatchers("/uploads/**").permitAll()
+                                                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/webjars/**")
                                                 .permitAll()
 
-                                                // 🔐 DASHBOARD
-                                                .requestMatchers("/api/dashboard/**")
-                                                .hasAnyRole("ADMIN", "MANAGER")
-
-                                                // 🔐 ADMIN API
-                                                .requestMatchers("/api/admin/**")
+                                                // Categories - GET cho phép nhiều role, POST/PUT/DELETE chỉ ADMIN
+                                                .requestMatchers(HttpMethod.GET, "/api/categories/**")
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
+                                                .requestMatchers(HttpMethod.POST, "/api/categories/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.PUT, "/api/categories/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.PATCH, "/api/categories/**")
                                                 .hasRole("ADMIN")
-                                                // 🔐 ALL OTHER API
+                                                .requestMatchers(HttpMethod.DELETE, "/api/categories/**")
+                                                .hasRole("ADMIN")
+
+                                                // Products - GET cho phép nhiều role, POST/PUT/DELETE chỉ ADMIN
+                                                .requestMatchers(HttpMethod.GET, "/api/products/**")
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
+                                                .requestMatchers(HttpMethod.POST, "/api/products/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.PUT, "/api/products/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.PATCH, "/api/products/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
+
+                                                // Tables
+                                                .requestMatchers("/api/tables/**").hasAnyRole("ADMIN", "STAFF")
+
+                                                // Orders
+                                                .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF")
+
+                                                // Users - chỉ ADMIN
+                                                .requestMatchers("/api/users/**").hasRole("ADMIN")
+
+                                                // Dashboard - chỉ ADMIN
+                                                .requestMatchers("/api/dashboard/**").hasRole("ADMIN")
+
+                                                // Các request còn lại yêu cầu authenticated
                                                 .anyRequest().authenticated());
 
-                // add JWT filter
-                http.addFilterBefore(
-                                authTokenFilter(),
-                                UsernamePasswordAuthenticationFilter.class);
+                http.addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
 
                 return http.build();
         }
 
-        // ================= CORS CONFIGURATION =================
         @Bean
         public CorsConfigurationSource corsConfigurationSource() {
                 CorsConfiguration configuration = new CorsConfiguration();
-                configuration.setAllowedOrigins(Arrays.asList("*"));
+                configuration.setAllowedOrigins(Arrays.asList(
+                                "http://localhost:3000",
+                                "http://127.0.0.1:3000",
+                                "http://localhost:3001"));
                 configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-                configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Auth-Token"));
-                configuration.setExposedHeaders(Arrays.asList("X-Auth-Token"));
+                configuration.setAllowedHeaders(Arrays.asList("*"));
+                configuration.setExposedHeaders(Arrays.asList("Authorization"));
+                configuration.setAllowCredentials(true);
 
                 UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
                 source.registerCorsConfiguration("/**", configuration);
                 return source;
         }
 
-        // ================= AUTH MANAGER =================
         @Bean
-        public AuthenticationManager authenticationManager(
-                        AuthenticationConfiguration authConfig) throws Exception {
+        public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
                 return authConfig.getAuthenticationManager();
         }
 
-        // ================= PASSWORD ENCODER =================
         @Bean
         public PasswordEncoder passwordEncoder() {
                 return new BCryptPasswordEncoder();

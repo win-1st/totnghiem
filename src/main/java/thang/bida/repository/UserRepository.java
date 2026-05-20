@@ -4,69 +4,56 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import thang.bida.model.ERole;
+import thang.bida.model.Role;
 import thang.bida.model.User;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    @EntityGraph(attributePaths = "roles")
+    // Các method cơ bản
     Optional<User> findByUsername(String username);
+
+    Optional<User> findByEmail(String email);
 
     Boolean existsByUsername(String username);
 
     Boolean existsByEmail(String email);
 
-    @Query("SELECT u FROM User u JOIN u.roles r WHERE r.name IN :roleNames")
-    List<User> findByRolesNameIn(@Param("roleNames") List<ERole> roleNames);
+    // Tìm user theo role (Enum) - DÙNG CÁI NÀY
+    List<User> findByRole(Role role);
 
-    // === THÊM CÁC METHOD MỚI ===
+    // Tìm user theo role (dùng @Query)
+    @Query("SELECT u FROM User u WHERE u.role = :role")
+    List<User> findUsersByRole(@Param("role") Role role);
 
-    @EntityGraph(attributePaths = "roles")
-    Optional<User> findWithRolesById(Long id);
+    // Tìm user active theo role
+    List<User> findByIsActiveTrueAndRole(Role role);
 
-    @Query("SELECT u FROM User u WHERE u.isActive = :isActive")
-    List<User> findByIsActive(@Param("isActive") Boolean isActive);
+    // Tìm user theo tên (like)
+    List<User> findByFullNameContaining(String name);
 
-    @Query("SELECT u FROM User u JOIN u.roles r WHERE r.name = :roleName")
-    List<User> findByRoleName(@Param("roleName") ERole roleName);
+    // Tìm user mới nhất
+    List<User> findTop5ByOrderByCreatedAtDesc();
 
-    @Query("SELECT u FROM User u WHERE u.email = :email")
-    Optional<User> findByEmail(@Param("email") String email);
-
-    @Query("SELECT COUNT(u) FROM User u JOIN u.roles r WHERE r.name IN :roleNames")
-    Long countByRolesNameIn(@Param("roleNames") List<ERole> roleNames);
-
-    @Query("SELECT u FROM User u WHERE u.fullName LIKE %:name%")
-    List<User> findByFullNameContaining(@Param("name") String name);
-
-    @Query("SELECT u FROM User u JOIN u.roles r WHERE u.isActive = :isActive AND r.name IN :roleNames")
-    List<User> findByIsActiveAndRolesNameIn(@Param("isActive") Boolean isActive,
-            @Param("roleNames") List<ERole> roleNames);
-
-    // Method để kiểm tra xem email có tồn tại với user khác không (dùng cho update)
-    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.email = :email AND u.id != :userId")
-    Boolean existsByEmailAndIdNot(@Param("email") String email, @Param("userId") Long userId);
-
-    // Method để kiểm tra xem username có tồn tại với user khác không (dùng cho
-    // update)
-    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.username = :username AND u.id != :userId")
-    Boolean existsByUsernameAndIdNot(@Param("username") String username, @Param("userId") Long userId);
+    // Thống kê
+    long countByRole(Role role);
 
     long countByCreatedAtAfter(LocalDateTime time);
 
-    long countByRoles_Name(ERole name);
-
     Long countByIsActiveTrue();
 
-    List<User> findTop5ByCreatedAtAfterOrderByCreatedAtDesc(LocalDateTime cutoff);
-
-    // Thêm method để lấy số người dùng theo khoảng thời gian
     Long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    // Kiểm tra email tồn tại với user khác (dùng cho update)
+    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.email = :email AND u.id != :userId")
+    Boolean existsByEmailAndIdNot(@Param("email") String email, @Param("userId") Long userId);
+
+    // Kiểm tra username tồn tại với user khác
+    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.username = :username AND u.id != :userId")
+    Boolean existsByUsernameAndIdNot(@Param("username") String username, @Param("userId") Long userId);
 }

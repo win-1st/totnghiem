@@ -3,36 +3,31 @@ package thang.bida.services;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import thang.bida.model.ERole;
 import thang.bida.model.Role;
 import thang.bida.model.User;
-import thang.bida.repository.RoleRepository;
 import thang.bida.repository.UserRepository;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 @Service
 public class UserService {
 
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository, RoleRepository roleRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
     public List<User> getAllStaffs() {
-        return userRepository.findByRolesNameIn(
-                List.of(ERole.STAFF));
+        return userRepository.findByRole(Role.STAFF); 
     }
 
+    // Tạo nhân viên mới
     public User createStaff(String username, String email, String password, String fullName,
-            String phone, String address, String imageUrl, List<String> roles) {
+            String phone, String address, String imageUrl, String roleName) {
+
         if (userRepository.existsByUsername(username)) {
             throw new RuntimeException("Username đã tồn tại");
         }
@@ -50,24 +45,22 @@ public class UserService {
         user.setImageUrl(imageUrl);
         user.setIsActive(true);
 
-        Set<Role> roleSet = new HashSet<>();
-        for (String roleName : roles) {
-            String formattedRoleName = roleName.toUpperCase();
-            if (!formattedRoleName.startsWith("ROLE_")) {
-                formattedRoleName = "ROLE_" + formattedRoleName;
-            }
-
-            Role role = roleRepository.findByName(ERole.valueOf(formattedRoleName))
-                    .orElseThrow(() -> new RuntimeException("Role không tồn tại: " + roleName));
-            roleSet.add(role);
+        // Xử lý role
+        Role role;
+        try {
+            role = Role.valueOf(roleName.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Role không hợp lệ: " + roleName);
         }
-        user.setRoles(roleSet);
+        user.setRole(role);
 
         return userRepository.save(user);
     }
 
+    // Cập nhật nhân viên
     public User updateStaff(Long id, String username, String email, String password,
-            String fullName, String phone, String address, String imageUrl, List<String> roles) {
+            String fullName, String phone, String address, String imageUrl, String roleName) {
+
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại với ID: " + id));
 
@@ -90,22 +83,20 @@ public class UserService {
             user.setImageUrl(imageUrl);
         }
 
-        Set<Role> roleSet = new HashSet<>();
-        for (String roleName : roles) {
-            String formattedRoleName = roleName.toUpperCase();
-            if (!formattedRoleName.startsWith("ROLE_")) {
-                formattedRoleName = "ROLE_" + formattedRoleName;
+        // Xử lý role
+        if (roleName != null && !roleName.isEmpty()) {
+            try {
+                Role role = Role.valueOf(roleName.toUpperCase());
+                user.setRole(role);
+            } catch (IllegalArgumentException e) {
+                throw new RuntimeException("Role không hợp lệ: " + roleName);
             }
-
-            Role role = roleRepository.findByName(ERole.valueOf(formattedRoleName))
-                    .orElseThrow(() -> new RuntimeException("Role không tồn tại: " + roleName));
-            roleSet.add(role);
         }
-        user.setRoles(roleSet);
 
         return userRepository.save(user);
     }
 
+    // Bật/tắt trạng thái user
     public User toggleUserStatus(Long id, Boolean isActive) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại với ID: " + id));
@@ -113,11 +104,13 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    // Lấy user theo ID
     public User getUserById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại với ID: " + id));
     }
 
+    // Xóa user
     public boolean deleteUser(Long id) {
         if (userRepository.existsById(id)) {
             userRepository.deleteById(id);

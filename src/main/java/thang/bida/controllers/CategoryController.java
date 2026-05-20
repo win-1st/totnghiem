@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import thang.bida.model.Category;
 import thang.bida.payload.request.CategoryRequest;
@@ -24,7 +25,7 @@ public class CategoryController {
 
     // XEM TẤT CẢ DANH MỤC
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getAllCategories() {
         List<Category> categories = categoryService.getAllCategories();
 
@@ -39,7 +40,7 @@ public class CategoryController {
 
     // XEM DANH MỤC ĐANG ACTIVE
     @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getActiveCategories() {
         List<Category> categories = categoryService.getActiveCategories();
 
@@ -54,7 +55,7 @@ public class CategoryController {
 
     // XEM CHI TIẾT DANH MỤC
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getCategoryById(@PathVariable Long id) {
         Optional<Category> categoryOpt = categoryService.getCategoryById(id);
 
@@ -75,7 +76,7 @@ public class CategoryController {
 
     // TÌM KIẾM DANH MỤC THEO TÊN
     @GetMapping("/search")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> searchCategories(@RequestParam String keyword) {
         List<Category> categories = categoryService.searchCategories(keyword);
 
@@ -88,11 +89,28 @@ public class CategoryController {
         return ResponseEntity.ok(response);
     }
 
-    // THÊM DANH MỤC MỚI
+    // 🆕 THÊM DANH MỤC BẰNG FORM-DATA (CHỈ 1 POST DUY NHẤT)
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    public ResponseEntity<?> createCategory(@Valid @RequestBody CategoryRequest request) {
+    @PreAuthorize("hasAnyRole('ADMIN')")
+    public ResponseEntity<?> createCategory(
+            @RequestParam("name") String name,
+            @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "imageUrl", required = false) String imageUrl,
+            @RequestParam(value = "image", required = false) MultipartFile image) {
+
         try {
+            CategoryRequest request = new CategoryRequest();
+            request.setName(name);
+            request.setDescription(description);
+
+            // Xử lý ảnh: nếu upload file thì lưu, nếu không thì dùng imageUrl
+            if (image != null && !image.isEmpty()) {
+                String uploadedImageUrl = saveImage(image);
+                request.setImageUrl(uploadedImageUrl);
+            } else if (imageUrl != null && !imageUrl.isEmpty()) {
+                request.setImageUrl(imageUrl);
+            }
+
             Category category = categoryService.createCategory(request);
 
             Map<String, Object> response = new HashMap<>();
@@ -109,13 +127,34 @@ public class CategoryController {
         }
     }
 
-    // SỬA DANH MỤC
+    // Phương thức lưu ảnh (tạm thời)
+    private String saveImage(MultipartFile image) {
+        // TODO: implement image saving logic
+        return "/uploads/" + image.getOriginalFilename();
+    }
+
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> updateCategory(
             @PathVariable Long id,
-            @Valid @RequestBody CategoryRequest request) {
+            @RequestParam("name") String name,
+            @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "imageUrl", required = false) String imageUrl,
+            @RequestParam(value = "image", required = false) MultipartFile image) {
+
         try {
+            CategoryRequest request = new CategoryRequest();
+            request.setName(name);
+            request.setDescription(description);
+
+            // Xử lý ảnh: nếu upload file thì lưu, nếu không thì dùng imageUrl
+            if (image != null && !image.isEmpty()) {
+                String uploadedImageUrl = saveImage(image);
+                request.setImageUrl(uploadedImageUrl);
+            } else if (imageUrl != null && !imageUrl.isEmpty()) {
+                request.setImageUrl(imageUrl);
+            }
+
             Category category = categoryService.updateCategory(id, request);
 
             Map<String, Object> response = new HashMap<>();
@@ -153,7 +192,7 @@ public class CategoryController {
 
     // THAY ĐỔI TRẠNG THÁI ACTIVE/INACTIVE
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> toggleCategoryStatus(
             @PathVariable Long id,
             @RequestParam Boolean active) {
