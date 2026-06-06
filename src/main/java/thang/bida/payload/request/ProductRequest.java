@@ -2,7 +2,6 @@ package thang.bida.payload.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import org.springframework.web.multipart.MultipartFile;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,8 +17,6 @@ public class ProductRequest {
 
     private String description;
 
-    @NotNull(message = "Giá sản phẩm không được để trống")
-    @Positive(message = "Giá sản phẩm phải lớn hơn 0")
     private BigDecimal price;
 
     @NotNull(message = "Danh mục không được để trống")
@@ -32,4 +29,9 @@ public class ProductRequest {
     private Boolean active = true;
 
     private MultipartFile image;
+
+    // Thêm 2 field cho TIME_BASED
+    private String productType = "FOOD";
+
+    private BigDecimal pricePerMinute;
 }

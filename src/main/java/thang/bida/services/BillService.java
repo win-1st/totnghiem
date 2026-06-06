@@ -5,11 +5,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import thang.bida.model.Bill;
 import thang.bida.model.Order;
+import thang.bida.model.Bill.PaymentMethod;
+import thang.bida.model.Bill.PaymentStatus;
 import thang.bida.repository.BillRepository;
 import thang.bida.repository.OrderRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -18,99 +21,112 @@ public class BillService {
 
     private final BillRepository billRepository;
     private final OrderRepository orderRepository;
+    private final OrderService orderService;
 
-    public BillService(BillRepository billRepository, OrderRepository orderRepository) {
+    public BillService(BillRepository billRepository,
+            OrderRepository orderRepository,
+            OrderService orderService) {
         this.billRepository = billRepository;
         this.orderRepository = orderRepository;
+        this.orderService = orderService;
     }
 
     public Bill createBill(Long orderId, Bill.PaymentMethod paymentMethod) {
+        System.out.println("=== CREATE BILL ===");
+        System.out.println("Order ID: " + orderId);
+        System.out.println("Payment Method: " + paymentMethod);
+
+        // 1. Lấy order
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
 
-        // 1️⃣ Set end time
-        LocalDateTime endTime = LocalDateTime.now();
-        order.setEndTime(endTime);
+        // Kiểm tra bill đã tồn tại
+        Optional<Bill> existingBill = billRepository.findByOrderId(orderId);
+        if (existingBill.isPresent()) {
+            System.out.println("Bill already exists for order " + orderId);
+            return existingBill.get();
+        }
 
-        // 2️⃣ Tính tiền giờ
-        BigDecimal playFee = calculatePlayFee(order.getStartTime(), endTime);
+        // 2. Nếu OPEN → finish
+        if (order.getStatus() == Order.OrderStatus.OPEN) {
+            System.out.println("Order is OPEN, finishing...");
+            orderService.finishPlaying(orderId);
+            order = orderRepository.findById(orderId).get();
+        }
 
-        // 3️⃣ Tổng tiền = tiền giờ + tiền đồ
-        BigDecimal total = order.getTotalAmount().add(playFee);
-        order.setTotalAmount(total);
+        // 3. Tính tổng tiền
+        orderService.updateOrderTotal(orderId);
+        order = orderRepository.findById(orderId).get();
+        BigDecimal totalAmount = order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
+        System.out.println("Total amount: " + totalAmount);
 
-        // 4️⃣ Đóng order
-        order.setStatus(Order.OrderStatus.PAID);
-        orderRepository.save(order);
-
-        // 5️⃣ Tạo bill
-        Bill bill = new Bill(order, total);
+        // 4. Tạo bill
+        Bill bill = new Bill();
+        bill.setOrder(order);
+        bill.setTotalAmount(totalAmount);
         bill.setPaymentMethod(paymentMethod);
-        bill.setPaymentStatus(Bill.PaymentStatus.PENDING);
-        bill.setIssuedAt(endTime);
+        bill.setIssuedAt(LocalDateTime.now());
 
-        return billRepository.save(bill);
+        // ✅ QUAN TRỌNG: Với thanh toán online (MOMO/BANKING) thì đã thanh toán ngay
+        if (paymentMethod == PaymentMethod.CASH) {
+            bill.setPaymentStatus(PaymentStatus.PENDING);
+        } else {
+            bill.setPaymentStatus(PaymentStatus.PAID); // ONLINE: PAID ngay
+        }
+
+        Bill savedBill = billRepository.save(bill);
+        System.out.println("Bill saved with ID: " + savedBill.getId() + ", Status: " + savedBill.getPaymentStatus());
+
+        // 5. Close order → trừ stock và giải phóng bàn
+        System.out.println("Closing order...");
+        try {
+            orderService.closeOrder(orderId);
+            System.out.println("Order closed successfully!");
+        } catch (Exception e) {
+            System.err.println("Error closing order: " + e.getMessage());
+            throw new RuntimeException("Không thể đóng order: " + e.getMessage());
+        }
+
+        return savedBill;
     }
 
-    public Bill updatePaymentStatus(Long billId, Bill.PaymentStatus paymentStatus) {
-        Bill bill = billRepository.findById(billId)
-                .orElseThrow(() -> new RuntimeException("Bill not found"));
-        bill.setPaymentStatus(paymentStatus);
-        return billRepository.save(bill);
-    }
-
-    public Bill getBillByOrderId(Long orderId) {
-        Optional<Bill> bill = billRepository.findByOrderId(orderId);
-        return bill.orElse(null);
-    }
-
-    // ========== THÊM CÁC PHƯƠNG THỨC BỊ THIẾU ==========
-
-    // 1. Phương thức getBillByOrder - được gọi từ Controller
     public Bill getBillByOrder(Long orderId) {
-        return getBillByOrderId(orderId);
+        return billRepository.findByOrderId(orderId).orElse(null);
     }
 
-    // 2. Phương thức confirmCashPayment - được gọi từ Controller
     public void confirmCashPayment(Long billId) {
         Bill bill = billRepository.findById(billId)
                 .orElseThrow(() -> new RuntimeException("Bill not found"));
 
-        bill.setPaymentMethod(Bill.PaymentMethod.CASH);
-        bill.setPaymentStatus(Bill.PaymentStatus.PAID);
-        bill.setIssuedAt(LocalDateTime.now());
+        if (bill.getPaymentStatus() == PaymentStatus.PAID)
+            return;
 
+        bill.setPaymentStatus(PaymentStatus.PAID);
         billRepository.save(bill);
 
-        // Cập nhật trạng thái order nếu cần
         Order order = bill.getOrder();
         if (order != null && order.getStatus() != Order.OrderStatus.PAID) {
-            order.setStatus(Order.OrderStatus.PAID);
-            orderRepository.save(order);
+            orderService.closeOrder(order.getId());
         }
     }
 
-    // 3. Phương thức confirmMomoPayment - được gọi từ Controller
     public void confirmMomoPayment(Long billId) {
         Bill bill = billRepository.findById(billId)
                 .orElseThrow(() -> new RuntimeException("Bill not found"));
 
-        bill.setPaymentMethod(Bill.PaymentMethod.MOMO);
-        bill.setPaymentStatus(Bill.PaymentStatus.PAID);
-        bill.setIssuedAt(LocalDateTime.now());
+        if (bill.getPaymentStatus() == PaymentStatus.PAID)
+            return;
 
+        bill.setPaymentStatus(PaymentStatus.PAID);
         billRepository.save(bill);
 
-        // Cập nhật trạng thái order nếu cần
         Order order = bill.getOrder();
         if (order != null && order.getStatus() != Order.OrderStatus.PAID) {
-            order.setStatus(Order.OrderStatus.PAID);
-            orderRepository.save(order);
+            orderService.closeOrder(order.getId());
         }
     }
 
-    // 4. Phương thức bổ sung - lấy danh sách bill theo trạng thái
-    public java.util.List<Bill> getBillsByPaymentStatus(Bill.PaymentStatus paymentStatus) {
+    public List<Bill> getBillsByPaymentStatus(Bill.PaymentStatus paymentStatus) {
         return billRepository.findByPaymentStatus(paymentStatus);
     }
 
@@ -118,24 +134,4 @@ public class BillService {
         BigDecimal revenue = billRepository.getTotalRevenueByDateRange(startDate, endDate);
         return revenue != null ? revenue : BigDecimal.ZERO;
     }
-
-    private BigDecimal calculatePlayFee(LocalDateTime start, LocalDateTime end) {
-        if (start == null || end == null) {
-            return BigDecimal.ZERO;
-        }
-
-        long minutes = java.time.Duration.between(start, end).toMinutes();
-        if (minutes <= 0)
-            minutes = 1;
-
-        // Giá bàn: 60.000 / giờ
-        BigDecimal pricePerHour = new BigDecimal("60000");
-
-        // Làm tròn lên theo phút
-        BigDecimal hours = BigDecimal.valueOf(minutes)
-                .divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.UP);
-
-        return pricePerHour.multiply(hours);
-    }
-
 }

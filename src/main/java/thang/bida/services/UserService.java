@@ -5,9 +5,11 @@ import org.springframework.stereotype.Service;
 
 import thang.bida.model.Role;
 import thang.bida.model.User;
+import thang.bida.payload.request.SignupRequest;
 import thang.bida.repository.UserRepository;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class UserService {
@@ -20,11 +22,51 @@ public class UserService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public List<User> getAllStaffs() {
-        return userRepository.findByRole(Role.STAFF); 
+    public boolean existsByUsername(String username) {
+        return userRepository.existsByUsername(username);
     }
 
-    // Tạo nhân viên mới
+    public boolean existsByEmail(String email) {
+        return userRepository.existsByEmail(email);
+    }
+
+    public User registerUser(SignupRequest signUpRequest) {
+        User user = new User();
+        user.setUsername(signUpRequest.getUsername());
+        user.setEmail(signUpRequest.getEmail());
+        user.setPassword(passwordEncoder.encode(signUpRequest.getPassword()));
+        user.setFullName(signUpRequest.getFullName());
+        user.setPhone(signUpRequest.getPhone());
+        user.setAddress(signUpRequest.getAddress());
+        user.setImageUrl(signUpRequest.getImageUrl());
+
+        // XỬ LÝ ROLE TỪ REQUEST
+        Set<String> requestRoles = signUpRequest.getRole();
+        if (requestRoles != null && !requestRoles.isEmpty()) {
+            String roleStr = requestRoles.iterator().next();
+            try {
+                Role role = Role.valueOf(roleStr.toUpperCase());
+                user.setRole(role);
+            } catch (IllegalArgumentException e) {
+                user.setRole(Role.CUSTOMER); // Mặc định nếu role không hợp lệ
+            }
+        } else {
+            user.setRole(Role.CUSTOMER); // Mặc định là CUSTOMER
+        }
+
+        user.setIsActive(true);
+
+        return userRepository.save(user);
+    }
+
+    public List<User> getAllStaffs() {
+        return userRepository.findByRole(Role.STAFF);
+    }
+
+    public List<User> getAllUsers() {
+        return userRepository.findAll();
+    }
+
     public User createStaff(String username, String email, String password, String fullName,
             String phone, String address, String imageUrl, String roleName) {
 
@@ -45,7 +87,6 @@ public class UserService {
         user.setImageUrl(imageUrl);
         user.setIsActive(true);
 
-        // Xử lý role
         Role role;
         try {
             role = Role.valueOf(roleName.toUpperCase());
@@ -57,7 +98,6 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    // Cập nhật nhân viên
     public User updateStaff(Long id, String username, String email, String password,
             String fullName, String phone, String address, String imageUrl, String roleName) {
 
@@ -83,7 +123,6 @@ public class UserService {
             user.setImageUrl(imageUrl);
         }
 
-        // Xử lý role
         if (roleName != null && !roleName.isEmpty()) {
             try {
                 Role role = Role.valueOf(roleName.toUpperCase());
@@ -96,7 +135,6 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    // Bật/tắt trạng thái user
     public User toggleUserStatus(Long id, Boolean isActive) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại với ID: " + id));
@@ -104,13 +142,11 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    // Lấy user theo ID
     public User getUserById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại với ID: " + id));
     }
 
-    // Xóa user
     public boolean deleteUser(Long id) {
         if (userRepository.existsById(id)) {
             userRepository.deleteById(id);

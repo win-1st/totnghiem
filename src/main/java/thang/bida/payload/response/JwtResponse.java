@@ -15,6 +15,7 @@ public class JwtResponse {
     private String accessToken;
     private String fullName;
 
+    // Constructor đầy đủ
     public JwtResponse(String accessToken, Long id, String username, String fullName, String email,
             List<String> roles) {
         this.accessToken = accessToken;

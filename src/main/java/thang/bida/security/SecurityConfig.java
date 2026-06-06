@@ -28,8 +28,10 @@ public class SecurityConfig {
         @Autowired
         private AuthEntryPointJwt unauthorizedHandler;
 
-        @Autowired
-        private AuthTokenFilter authTokenFilter;
+        @Bean
+        public AuthTokenFilter authenticationJwtTokenFilter() {
+                return new AuthTokenFilter();
+        }
 
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -46,7 +48,18 @@ public class SecurityConfig {
                                                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/webjars/**")
                                                 .permitAll()
 
-                                                // Categories - GET cho phép nhiều role, POST/PUT/DELETE chỉ ADMIN
+                                                // THÊM: PayOS endpoints (công khai)
+                                                .requestMatchers("/api/payos/webhook").permitAll()
+                                                .requestMatchers("/api/payos/check-status/**").permitAll()
+                                                .requestMatchers("/api/payos/status/**").permitAll()
+                                                .requestMatchers("/api/payos/create").permitAll() // THÊM DÒNG NÀY
+
+                                                // QUAN TRỌNG: Cho phép OPTIONS cho tất cả
+                                                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                                                .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF")
+
+                                                // Categories
                                                 .requestMatchers(HttpMethod.GET, "/api/categories/**")
                                                 .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
                                                 .requestMatchers(HttpMethod.POST, "/api/categories/**").hasRole("ADMIN")
@@ -56,7 +69,7 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.DELETE, "/api/categories/**")
                                                 .hasRole("ADMIN")
 
-                                                // Products - GET cho phép nhiều role, POST/PUT/DELETE chỉ ADMIN
+                                                // Products
                                                 .requestMatchers(HttpMethod.GET, "/api/products/**")
                                                 .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
                                                 .requestMatchers(HttpMethod.POST, "/api/products/**").hasRole("ADMIN")
@@ -65,21 +78,32 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
 
                                                 // Tables
-                                                .requestMatchers("/api/tables/**").hasAnyRole("ADMIN", "STAFF")
+                                                .requestMatchers(HttpMethod.GET, "/api/tables/**")
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
+                                                .requestMatchers(HttpMethod.POST, "/api/tables/**")
+                                                .hasAnyRole("ADMIN", "STAFF")
+                                                .requestMatchers(HttpMethod.PUT, "/api/tables/**")
+                                                .hasAnyRole("ADMIN", "STAFF")
+                                                .requestMatchers(HttpMethod.PATCH, "/api/tables/**")
+                                                .hasAnyRole("ADMIN", "STAFF")
+                                                .requestMatchers(HttpMethod.DELETE, "/api/tables/**").hasRole("ADMIN")
 
-                                                // Orders
-                                                .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF")
-
-                                                // Users - chỉ ADMIN
+                                                // Users, Admin, Dashboard, Customer
                                                 .requestMatchers("/api/users/**").hasRole("ADMIN")
+                                                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.GET, "/api/dashboard/**")
+                                                .hasAnyRole("ADMIN", "MANAGER", "STAFF")
+                                                .requestMatchers(HttpMethod.POST, "/api/dashboard/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.PUT, "/api/dashboard/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.DELETE, "/api/dashboard/**")
+                                                .hasRole("ADMIN")
+                                                .requestMatchers("/api/customer/**")
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
 
-                                                // Dashboard - chỉ ADMIN
-                                                .requestMatchers("/api/dashboard/**").hasRole("ADMIN")
-
-                                                // Các request còn lại yêu cầu authenticated
+                                                // Các request còn lại
                                                 .anyRequest().authenticated());
 
-                http.addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
+                http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
                 return http.build();
         }
@@ -94,7 +118,8 @@ public class SecurityConfig {
                 configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
                 configuration.setAllowedHeaders(Arrays.asList("*"));
                 configuration.setExposedHeaders(Arrays.asList("Authorization"));
-                configuration.setAllowCredentials(true);
+                configuration.setAllowCredentials(false);
+                configuration.setMaxAge(3600L);
 
                 UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
                 source.registerCorsConfiguration("/**", configuration);

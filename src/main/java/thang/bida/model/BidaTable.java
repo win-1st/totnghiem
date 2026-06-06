@@ -6,6 +6,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Getter
 @Setter
@@ -14,6 +15,7 @@ import lombok.Setter;
         @Index(name = "idx_table_status", columnList = "status"),
         @Index(name = "idx_table_type", columnList = "type")
 })
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 public class BidaTable {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -30,9 +32,6 @@ public class BidaTable {
 
     @Column(name = "type")
     private String type; // STANDARD, PREMIUM, VIP
-
-    @Column(name = "hourly_rate", precision = 10, scale = 2)
-    private java.math.BigDecimal hourlyRate;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)

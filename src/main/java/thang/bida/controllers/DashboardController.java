@@ -20,9 +20,8 @@ public class DashboardController {
         @Autowired
         private DashboardService dashboardService;
 
-        // ===== DASHBOARD TỔNG QUAN =====
         @GetMapping("/overview")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA: cho phép STAFF
         public ResponseEntity<?> getDashboardOverview(
                         @RequestParam(required = false, defaultValue = "week") String timeRange) {
 
@@ -34,9 +33,8 @@ public class DashboardController {
                                 "data", response));
         }
 
-        // ===== THỐNG KÊ THEO THỜI GIAN =====
         @GetMapping("/statistics/time-based")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
         public ResponseEntity<?> getTimeBasedStatistics(
                         @RequestParam String timeRange,
                         @RequestParam(required = false) LocalDate startDate,
@@ -50,9 +48,8 @@ public class DashboardController {
                                 "data", stats));
         }
 
-        // ===== TOP SẢN PHẨM BÁN CHẠY =====
         @GetMapping("/top-products")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
         public ResponseEntity<?> getTopProducts(
                         @RequestParam(required = false, defaultValue = "10") int limit,
                         @RequestParam(required = false) String timeRange) {
@@ -66,9 +63,8 @@ public class DashboardController {
                                 "count", topProducts.size()));
         }
 
-        // ===== DOANH THU THEO THÁNG =====
         @GetMapping("/revenue/monthly")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
         public ResponseEntity<?> getMonthlyRevenue(
                         @RequestParam(required = false) Integer year) {
 
@@ -80,9 +76,8 @@ public class DashboardController {
                                 "data", revenue));
         }
 
-        // ===== THỐNG KÊ NGƯỜI DÙNG =====
         @GetMapping("/users/statistics")
-        @PreAuthorize("hasRole('ADMIN')")
+        @PreAuthorize("hasRole('ADMIN')") // GIỮ NGUYÊN - chỉ ADMIN
         public ResponseEntity<?> getUserStatistics() {
 
                 Map<String, Object> userStats = dashboardService.getUserStatistics();
@@ -93,9 +88,8 @@ public class DashboardController {
                                 "data", userStats));
         }
 
-        // ===== HOẠT ĐỘNG GẦN ĐÂY =====
         @GetMapping("/recent-activities")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
         public ResponseEntity<?> getRecentActivities(
                         @RequestParam(required = false, defaultValue = "20") int limit) {
 
@@ -108,9 +102,8 @@ public class DashboardController {
                                 "count", activities.size()));
         }
 
-        // ===== THỐNG KÊ BÀN =====
         @GetMapping("/tables/statistics")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
         public ResponseEntity<?> getTableStatistics() {
 
                 Map<String, Object> tableStats = dashboardService.getTableStatistics();
@@ -121,9 +114,8 @@ public class DashboardController {
                                 "data", tableStats));
         }
 
-        // ===== BÁO CÁO DOANH THU THEO NGÀY =====
         @GetMapping("/revenue/daily")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
         public ResponseEntity<?> getDailyRevenue(
                         @RequestParam(required = false) LocalDate date) {
 
@@ -135,9 +127,8 @@ public class DashboardController {
                                 "data", dailyRevenue));
         }
 
-        // ===== THỐNG KÊ ĐƠN HÀNG =====
         @GetMapping("/orders/statistics")
-        @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
         public ResponseEntity<?> getOrderStatistics(
                         @RequestParam(required = false, defaultValue = "week") String timeRange) {
 

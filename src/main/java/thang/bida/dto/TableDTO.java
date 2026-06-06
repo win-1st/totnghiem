@@ -12,6 +12,7 @@ public class TableDTO {
     private Integer number;
     private String tableName;
     private Integer capacity;
+    private String type;
     private BidaTable.TableStatus status;
     private Long currentOrderId;
     private LocalDateTime startTime;

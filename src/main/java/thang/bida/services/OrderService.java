@@ -41,12 +41,22 @@ public class OrderService {
     // PRIVATE COMMON LOGIC
     // =====================================================
 
-    private void updateStock(Product product, int diff) {
-        if (diff > 0 && product.getStockQuantity() < diff) {
-            throw new RuntimeException("Insufficient stock");
+    // ✅ Sửa: dùng stockQuantity
+    private void updateStockAfterPayment(Product product, int quantity) {
+        if (product.isTimeBased()) {
+            System.out.println("✅ TIME_BASED product '" + product.getName() + "' - skipping stock check");
+            return;
         }
-        product.setStockQuantity(product.getStockQuantity() - diff);
+
+        // Sử dụng stockQuantity (field trong Product)
+        if (product.getStockQuantity() < quantity) {
+            throw new RuntimeException(
+                    "Sản phẩm " + product.getName() + " không đủ số lượng. Còn: " + product.getStockQuantity());
+        }
+
+        product.decreaseStock(quantity); // Dùng method có sẵn trong Product
         productRepository.save(product);
+        System.out.println("✅ Đã trừ stock: " + product.getName() + " - " + quantity);
     }
 
     private void recalcAndNotify(Order order) {
@@ -82,7 +92,7 @@ public class OrderService {
     }
 
     // =====================================================
-    // ORDER LIFECYCLE
+    // OPEN ORDER
     // =====================================================
 
     public Order openOrder(Long tableId, Long employeeId) {
@@ -96,9 +106,15 @@ public class OrderService {
             throw new RuntimeException("Bàn không trống");
         }
 
-        Order order = new Order(table, employee);
+        Order order = new Order();
+        order.setTable(table);
+        order.setEmployee(employee);
         order.setStatus(OrderStatus.OPEN);
-        order.setStartTime(LocalDateTime.now());
+        order.setStartTime(null);
+        order.setTotalAmount(BigDecimal.ZERO);
+        order.setTableFee(BigDecimal.ZERO);
+        order.setProductFee(BigDecimal.ZERO);
+        order.setStockDeducted(false);
 
         Order saved = orderRepository.save(order);
 
@@ -106,52 +122,279 @@ public class OrderService {
         tableRepository.save(table);
 
         webSocketService.notifyTableStatus(table.getId(), "OCCUPIED");
+        webSocketService.notifyOrderUpdate(saved);
 
         return saved;
     }
 
-    public Order openOrderWithCustomer(Long tableId, Long employeeId, Long customerId) {
-        BidaTable table = tableRepository.findById(tableId)
-                .orElseThrow(() -> new RuntimeException("Table not found"));
+    // =====================================================
+    // ADD ITEM TO ORDER - KHÔNG trừ stock ở đây
+    // =====================================================
 
-        User employee = userRepository.findById(employeeId)
-                .orElseThrow(() -> new RuntimeException("Employee not found"));
+    public Order addItemToOrder(Long orderId, Long productId, Integer quantity) {
+        Order order = getOrderById(orderId);
 
-        User customer = userRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
-
-        if (table.getStatus() != BidaTable.TableStatus.FREE) {
-            throw new RuntimeException("Bàn không trống");
+        if (order.getStatus() != OrderStatus.OPEN) {
+            throw new RuntimeException("Không thể thêm món khi đã kết thúc chơi");
         }
 
-        Order order = new Order(table, customer, employee);
-        order.setStatus(OrderStatus.OPEN);
-        order.setStartTime(LocalDateTime.now());
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
 
-        Order saved = orderRepository.save(order);
+        if (product.isTimeBased()) {
+            if (order.getTimeBasedProduct() != null) {
+                throw new RuntimeException("Bàn đã có dịch vụ tính giờ rồi!");
+            }
+            if (quantity > 1) {
+                throw new RuntimeException("Chỉ được chọn 1 lần dịch vụ tính giờ!");
+            }
 
-        table.setStatus(BidaTable.TableStatus.OCCUPIED);
-        tableRepository.save(table);
+            order.setTimeBasedProduct(product);
 
-        webSocketService.notifyTableStatus(table.getId(), "OCCUPIED");
+            if (order.getStartTime() == null) {
+                order.setStartTime(LocalDateTime.now());
+                System.out.println("⏱️ Bắt đầu tính giờ từ: " + order.getStartTime());
+            }
 
-        return saved;
+            BigDecimal initialPrice = product.getPricePerMinute() != null ? product.getPricePerMinute()
+                    : BigDecimal.ZERO;
+            OrderItem timeItem = new OrderItem(order, product, 1, initialPrice);
+            timeItem.setSubtotal(BigDecimal.ZERO);
+            orderItemRepository.save(timeItem);
+            order.getItems().add(timeItem);
+
+            // ✅ KHÔNG gọi recalcAndNotify vì updateOrderTotal sẽ xử lý TIME_BASED
+            updateOrderTotal(order.getId());
+            webSocketService.notifyOrderUpdate(order);
+            return order;
+        }
+
+        // FOOD/DRINK
+        OrderItem item = orderItemRepository
+                .findByOrderIdAndProductId(orderId, productId)
+                .orElse(new OrderItem(order, product, 0, product.getPrice()));
+
+        item.setQuantity(item.getQuantity() + quantity);
+        BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+        item.setSubtotal(subtotal);
+        orderItemRepository.save(item);
+
+        // Nếu item mới, thêm vào order
+        if (!order.getItems().contains(item)) {
+            order.getItems().add(item);
+        }
+
+        updateOrderTotal(order.getId());
+        webSocketService.notifyOrderUpdate(order);
+        return order;
     }
 
-    public Order updateOrderStatus(Long orderId, Order.OrderStatus status) {
+    public OrderItem addItem(Long orderId, Long productId, Integer quantity) {
+        addItemToOrder(orderId, productId, quantity);
+        return getOrderItem(orderId, productId);
+    }
+
+    // =====================================================
+    // UPDATE ITEM QUANTITY - KHÔNG cập nhật stock
+    // =====================================================
+
+    public void updateItemQuantity(Long orderId, Long itemId, Integer quantity) {
         Order order = getOrderById(orderId);
-        order.setStatus(status);
+
+        OrderItem item = orderItemRepository.findById(itemId)
+                .orElseThrow(() -> new RuntimeException("Order item not found"));
+
+        Product product = item.getProduct();
+
+        if (product.isTimeBased()) {
+            throw new RuntimeException("Không thể thay đổi số lượng của dịch vụ tính giờ!");
+        }
+
+        if (quantity <= 0) {
+            // ❌ KHÔNG hoàn stock
+            order.removeItem(item);
+            orderItemRepository.delete(item);
+        } else {
+            item.setQuantity(quantity);
+            item.setSubtotal(product.getPrice().multiply(BigDecimal.valueOf(quantity)));
+            orderItemRepository.save(item);
+        }
+
+        updateOrderTotal(orderId);
+        webSocketService.notifyOrderUpdate(order);
+    }
+
+    // =====================================================
+    // REMOVE ITEM - KHÔNG hoàn stock
+    // =====================================================
+
+    public void removeItem(Long orderId, Long itemId) {
+        Order order = getOrderById(orderId);
+
+        OrderItem item = orderItemRepository.findById(itemId)
+                .orElseThrow(() -> new RuntimeException("Item not found"));
+
+        if (item.getProduct().isTimeBased()) {
+            throw new RuntimeException("Không thể xóa dịch vụ tính giờ! Hãy kết thúc order để tính tiền.");
+        }
+
+        // ❌ KHÔNG hoàn stock
+        order.removeItem(item);
+        orderItemRepository.delete(item);
+
+        updateOrderTotal(orderId);
+        webSocketService.notifyOrderUpdate(order);
+    }
+
+    // =====================================================
+    // UPDATE ORDER TOTAL
+    // =====================================================
+
+    public void updateOrderTotal(Long orderId) {
+        Order order = getOrderById(orderId);
+
+        BigDecimal itemsTotal = order.getItems().stream()
+                .filter(item -> !item.getProduct().isTimeBased())
+                .map(OrderItem::getSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        System.out.println("=== UPDATE ORDER TOTAL ===");
+        System.out.println("Order ID: " + orderId);
+        System.out.println("Items total (food/drink): " + itemsTotal);
+
+        BigDecimal tableFee = BigDecimal.ZERO;
+        if (order.getTimeBasedProduct() != null && order.getStartTime() != null) {
+            long minutes = order.getMinutesPlayed();
+            BigDecimal pricePerMinute = order.getTimeBasedProduct().getPricePerMinute();
+            tableFee = pricePerMinute.multiply(BigDecimal.valueOf(minutes));
+
+            final BigDecimal finalTableFee = tableFee;
+            order.getItems().stream()
+                    .filter(item -> item.getProduct().isTimeBased())
+                    .findFirst()
+                    .ifPresent(timeItem -> {
+                        timeItem.setSubtotal(finalTableFee);
+                        timeItem.setPrice(finalTableFee);
+                        timeItem.setUnitPrice(finalTableFee);
+                        orderItemRepository.save(timeItem);
+                    });
+        }
+
+        BigDecimal total = itemsTotal.add(tableFee);
+        order.setTotalAmount(total);
+        order.setTableFee(tableFee);
+        order.setProductFee(itemsTotal);
+        orderRepository.save(order);
+    }
+
+    // =====================================================
+    // FINISH PLAYING
+    // =====================================================
+
+    public Order finishPlaying(Long orderId) {
+        Order order = getOrderById(orderId);
+
+        if (order.getStatus() != OrderStatus.OPEN) {
+            throw new RuntimeException("Order không ở trạng thái đang chơi");
+        }
+
+        if (order.getStartTime() != null) {
+            order.setEndTime(LocalDateTime.now());
+            System.out.println("⏱️ Kết thúc tính giờ lúc: " + order.getEndTime());
+        }
+
+        updateOrderTotal(orderId);
+        order.setStatus(OrderStatus.WAITING_PAYMENT);
+
         Order saved = orderRepository.save(order);
         webSocketService.notifyOrderUpdate(saved);
+
         return saved;
     }
+
+    // =====================================================
+    // DEDUCT STOCK - Gọi KHI THANH TOÁN
+    // =====================================================
+
+    @Transactional
+    public void deductStockForOrder(Long orderId) {
+        Order order = getOrderById(orderId);
+
+        if (order.isStockDeducted()) {
+            System.out.println("Stock already deducted for order " + orderId);
+            return;
+        }
+
+        for (OrderItem item : order.getItems()) {
+            Product product = item.getProduct();
+            if (!product.isTimeBased() && item.getQuantity() > 0) {
+                int quantity = item.getQuantity();
+
+                // Kiểm tra tồn kho - sử dụng getStockQuantity()
+                if (product.getStockQuantity() < quantity) {
+                    throw new RuntimeException(
+                            "Sản phẩm " + product.getName() + " không đủ số lượng. Còn: " + product.getStockQuantity());
+                }
+
+                // Trừ stock - sử dụng decreaseStock()
+                product.decreaseStock(quantity);
+                productRepository.save(product);
+                System.out.println("✅ Đã trừ stock: " + product.getName() + " x" + quantity);
+            }
+        }
+
+        order.setStockDeducted(true);
+        orderRepository.save(order);
+        System.out.println("✅ Đã đánh dấu đã trừ stock cho order " + orderId);
+    }
+
+    // =====================================================
+    // REFUND STOCK - Gọi khi hủy đơn (nếu đã trừ stock)
+    // =====================================================
+
+    @Transactional
+    public void refundStockForOrder(Long orderId) {
+        Order order = getOrderById(orderId);
+
+        if (!order.isStockDeducted()) {
+            System.out.println("Stock not deducted yet for order " + orderId);
+            return;
+        }
+
+        for (OrderItem item : order.getItems()) {
+            Product product = item.getProduct();
+            if (!product.isTimeBased() && item.getQuantity() > 0) {
+                // Hoàn stock - sử dụng increaseStock()
+                product.increaseStock(item.getQuantity());
+                productRepository.save(product);
+                System.out.println("✅ Đã hoàn stock: " + product.getName() + " x" + item.getQuantity());
+            }
+        }
+
+        order.setStockDeducted(false);
+        orderRepository.save(order);
+        System.out.println("✅ Đã hoàn stock cho order " + orderId);
+    }
+
+    // =====================================================
+    // CLOSE ORDER (PAYMENT) - TRỪ STOCK TẠI ĐÂY
+    // =====================================================
 
     public void closeOrder(Long orderId) {
         Order order = getOrderById(orderId);
 
-        if (order.getStatus() != OrderStatus.OPEN && order.getStatus() != OrderStatus.WAITING_PAYMENT) {
-            throw new RuntimeException("Order không ở trạng thái đang chơi hoặc chờ thanh toán");
+        if (order.getStatus() == OrderStatus.PAID) {
+            System.out.println("Order " + orderId + " already paid");
+            return;
         }
+
+        if (order.getStatus() != OrderStatus.OPEN && order.getStatus() != OrderStatus.WAITING_PAYMENT) {
+            throw new RuntimeException(
+                    "Order không ở trạng thái đang chơi hoặc chờ thanh toán. Status hiện tại: " + order.getStatus());
+        }
+
+        // ✅ TRỪ STOCK TRƯỚC KHI THANH TOÁN
+        deductStockForOrder(orderId);
 
         order.setStatus(OrderStatus.PAID);
         orderRepository.save(order);
@@ -165,138 +408,19 @@ public class OrderService {
     }
 
     // =====================================================
-    // ORDER ITEM ACTIONS
+    // CANCEL ORDER - HOÀN STOCK NẾU ĐÃ TRỪ
     // =====================================================
-
-    public Order addItemToOrder(Long orderId, Long productId, Integer quantity) {
-        Order order = getOrderById(orderId);
-
-        if (order.getStatus() != OrderStatus.OPEN) {
-            throw new RuntimeException("Không thể thêm món khi đã kết thúc chơi");
-        }
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-
-        OrderItem item = orderItemRepository
-                .findByOrderIdAndProductId(orderId, productId)
-                .orElse(new OrderItem(order, product, 0, product.getPrice()));
-
-        item.setQuantity(item.getQuantity() + quantity);
-        updateStock(product, quantity);
-
-        orderItemRepository.save(item);
-        recalcAndNotify(order);
-
-        return order;
-    }
-
-    public Order updateOrderItemQuantity(Long orderId, Long productId, Integer newQuantity) {
-        Order order = getOrderById(orderId);
-        OrderItem item = getOrderItem(orderId, productId);
-
-        int diff = newQuantity - item.getQuantity();
-        updateStock(item.getProduct(), diff);
-
-        item.setQuantity(newQuantity);
-        orderItemRepository.save(item);
-
-        recalcAndNotify(order);
-        return order;
-    }
-
-    public Order removeItemFromOrder(Long orderId, Long productId) {
-        Order order = getOrderById(orderId);
-        OrderItem item = getOrderItem(orderId, productId);
-
-        updateStock(item.getProduct(), -item.getQuantity());
-        orderItemRepository.delete(item);
-
-        recalcAndNotify(order);
-        return order;
-    }
-
-    // =====================================================
-    // ITEM ACTIONS BY ITEM ID
-    // =====================================================
-
-    public OrderItem addItem(Long orderId, Long productId, Integer quantity) {
-        addItemToOrder(orderId, productId, quantity);
-        return getOrderItem(orderId, productId);
-    }
-
-    public void updateItemQuantity(Long orderId, Long itemId, Integer quantity) {
-        OrderItem item = orderItemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
-
-        updateOrderItemQuantity(orderId, item.getProduct().getId(), quantity);
-    }
-
-    public void removeItem(Long orderId, Long itemId) {
-        OrderItem item = orderItemRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
-
-        removeItemFromOrder(orderId, item.getProduct().getId());
-    }
-
-    // =====================================================
-    // TOTAL MONEY
-    // =====================================================
-
-    public void updateOrderTotal(Long orderId) {
-        Order order = getOrderById(orderId);
-        BigDecimal total = orderItemRepository.getTotalAmountByOrderId(orderId);
-        order.setTotalAmount(total);
-        orderRepository.save(order);
-    }
-
-    // =====================================================
-    // DELETE
-    // =====================================================
-
-    public void deleteOrder(Long orderId) {
-        if (!orderRepository.existsById(orderId)) {
-            throw new RuntimeException("Order not found");
-        }
-        orderRepository.deleteById(orderId);
-    }
-
-    public Order getOrderByTable(Long tableId) {
-        List<Order> orders = orderRepository.findByTableIdWithItems(tableId);
-
-        if (orders.isEmpty()) {
-            throw new RuntimeException("Không tìm thấy order cho bàn này");
-        }
-
-        Order activeOrder = orders.stream()
-                .filter(o -> o.getStatus() == OrderStatus.OPEN ||
-                        o.getStatus() == OrderStatus.WAITING_PAYMENT)
-                .reduce((first, second) -> second)
-                .orElseThrow(() -> new RuntimeException("Không có order đang hoạt động"));
-
-        return activeOrder;
-    }
-
-    public Order finishPlaying(Long orderId) {
-        Order order = getOrderById(orderId);
-
-        if (order.getStatus() != OrderStatus.OPEN) {
-            throw new RuntimeException("Order không ở trạng thái đang chơi");
-        }
-
-        order.setStatus(OrderStatus.WAITING_PAYMENT);
-        order.setEndTime(LocalDateTime.now());
-
-        Order saved = orderRepository.save(order);
-        webSocketService.notifyOrderUpdate(saved);
-        return saved;
-    }
 
     public void cancelOrder(Long orderId) {
         Order order = getOrderById(orderId);
 
         if (order.getStatus() == OrderStatus.PAID) {
             throw new RuntimeException("Order đã thanh toán, không thể hủy");
+        }
+
+        // Nếu đã trừ stock thì hoàn lại
+        if (order.isStockDeducted()) {
+            refundStockForOrder(orderId);
         }
 
         order.setStatus(OrderStatus.CANCELLED);
@@ -307,5 +431,26 @@ public class OrderService {
         tableRepository.save(table);
 
         webSocketService.notifyTableStatus(table.getId(), "FREE");
+    }
+
+    // =====================================================
+    // OTHER METHODS
+    // =====================================================
+
+    public Order updateOrderStatus(Long orderId, Order.OrderStatus status) {
+        Order order = getOrderById(orderId);
+        order.setStatus(status);
+        Order saved = orderRepository.save(order);
+        webSocketService.notifyOrderUpdate(saved);
+        return saved;
+    }
+
+    public Order getOrderByTable(Long tableId) {
+        List<Order> orders = orderRepository.findByTableIdWithItems(tableId);
+        return orders.stream()
+                .filter(o -> o.getStatus() == OrderStatus.OPEN ||
+                        o.getStatus() == OrderStatus.WAITING_PAYMENT)
+                .reduce((first, second) -> second)
+                .orElse(null);
     }
 }

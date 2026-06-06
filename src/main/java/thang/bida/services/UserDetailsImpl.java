@@ -15,7 +15,7 @@ public class UserDetailsImpl implements UserDetails {
     private Long id;
     private String username;
     private String email;
-    private String fullName; // ← THÊM DÒNG NÀY
+    private String fullName;
     private String password;
     private String role;
 

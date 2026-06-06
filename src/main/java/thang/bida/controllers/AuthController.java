@@ -7,6 +7,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
@@ -14,24 +16,24 @@ import org.springframework.web.bind.annotation.*;
 import thang.bida.dto.ApiResponse;
 import thang.bida.dto.ChangePasswordRequest;
 import thang.bida.dto.ForgotPasswordRequest;
-import thang.bida.dto.LoginDto;
-import thang.bida.dto.RegisterDto;
 import thang.bida.dto.ResetPasswordRequest;
 import thang.bida.dto.VerifyOtpRequest;
-import thang.bida.model.Role;
 import thang.bida.model.User;
+import thang.bida.payload.request.LoginRequest;
+import thang.bida.payload.request.SignupRequest;
 import thang.bida.payload.response.JwtResponse;
 import thang.bida.payload.response.MessageResponse;
 import thang.bida.repository.UserRepository;
 import thang.bida.security.jwt.JwtUtils;
 import thang.bida.services.PasswordResetService;
 import thang.bida.services.UserDetailsImpl;
+import thang.bida.services.UserService;
 import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors; // ← QUAN TRỌNG: Thêm import này
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -43,17 +45,23 @@ public class AuthController {
     private final JwtUtils jwtUtils;
     private final AuthenticationManager authenticationManager;
     private final PasswordResetService passwordResetService;
+    private final UserService userService;
+    private final UserDetailsService userDetailsService; // ← THÊM DÒNG NÀY
 
     public AuthController(UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtUtils jwtUtils,
             AuthenticationManager authenticationManager,
-            PasswordResetService passwordResetService) {
+            PasswordResetService passwordResetService,
+            UserService userService,
+            UserDetailsService userDetailsService) { // ← THÊM THAM SỐ
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
         this.authenticationManager = authenticationManager;
         this.passwordResetService = passwordResetService;
+        this.userService = userService;
+        this.userDetailsService = userDetailsService; // ← THÊM DÒNG NÀY
     }
 
     @GetMapping("/health")
@@ -62,105 +70,50 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterDto registerDto) {
-        if (userRepository.existsByUsername(registerDto.getUsername())) {
-            return ResponseEntity.badRequest().body(new MessageResponse("Username is taken!"));
-        }
-        if (userRepository.existsByEmail(registerDto.getEmail())) {
-            return ResponseEntity.badRequest().body(new MessageResponse("Email is already in use!"));
-        }
-
-        User user = new User();
-        user.setUsername(registerDto.getUsername());
-        user.setEmail(registerDto.getEmail());
-        user.setPassword(passwordEncoder.encode(registerDto.getPassword()));
-        user.setFullName(registerDto.getFullName());
-        user.setPhone(registerDto.getPhone());
-        user.setAddress(registerDto.getAddress());
-        user.setImageUrl(registerDto.getImageUrl());
-
-        // Xử lý role
-        String roleName = registerDto.getRole() != null ? registerDto.getRole().toUpperCase() : "CUSTOMER";
-        try {
-            Role role = Role.valueOf(roleName);
-            user.setRole(role);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(new MessageResponse("Invalid role: " + roleName));
+    public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
+        if (userService.existsByUsername(signUpRequest.getUsername())) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new MessageResponse("Error: Username is already taken!"));
         }
 
-        userRepository.save(user);
+        if (userService.existsByEmail(signUpRequest.getEmail())) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new MessageResponse("Error: Email is already in use!"));
+        }
+
+        userService.registerUser(signUpRequest);
+
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginDto loginDto) {
+    public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginDto.getUsername(), loginDto.getPassword()));
+                new UsernamePasswordAuthenticationToken(
+                        loginRequest.getUsername(),
+                        loginRequest.getPassword()));
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         String jwt = jwtUtils.generateJwtToken(authentication);
 
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-        List<String> roles = List.of(userDetails.getRole());
 
-        // roles)
-        JwtResponse jwtResponse = new JwtResponse(
+        // SỬA ĐOẠN NÀY
+        List<String> roles = userDetails.getAuthorities().stream()
+                .map(item -> item.getAuthority().replace("ROLE_", ""))
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(new JwtResponse(
                 jwt,
                 userDetails.getId(),
                 userDetails.getUsername(),
                 userDetails.getFullName(),
                 userDetails.getEmail(),
-                roles);
-
-        return ResponseEntity.ok(jwtResponse);
-    }
-
-    @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> request) {
-        try {
-            String refreshToken = request.get("refreshToken");
-
-            if (refreshToken == null || refreshToken.isEmpty()) {
-                return ResponseEntity.badRequest().body("Refresh token is required");
-            }
-
-            System.out.println("🔄 REFRESH TOKEN ATTEMPT ===========================");
-
-            if (!jwtUtils.validateJwtToken(refreshToken)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid refresh token");
-            }
-
-            if (jwtUtils.isTokenExpired(refreshToken)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Refresh token expired");
-            }
-
-            String username = jwtUtils.getUserNameFromJwtToken(refreshToken);
-            System.out.println("✅ Valid refresh token for user: " + username);
-
-            User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            Authentication authentication = new UsernamePasswordAuthenticationToken(
-                    user.getUsername(), null, List.of(() -> "ROLE_" + user.getRole().name()));
-
-            String newAccessToken = jwtUtils.generateJwtToken(authentication);
-            String newRefreshToken = jwtUtils.generateRefreshToken(authentication);
-
-            System.out.println("✅ Token refresh successful!");
-            System.out.println("==================================================");
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("accessToken", newAccessToken);
-            response.put("refreshToken", newRefreshToken);
-            response.put("tokenType", "Bearer");
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            System.out.println("❌ REFRESH TOKEN FAILED: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token refresh failed: " + e.getMessage());
-        }
+                roles));
     }
 
     @GetMapping("/me")

@@ -5,7 +5,7 @@ import java.util.List;
 
 @Data
 public class CreatePaymentRequest {
-    private int orderCode;
+    private long orderCode;
     private int amount;
     private String description;
     private String returnUrl;

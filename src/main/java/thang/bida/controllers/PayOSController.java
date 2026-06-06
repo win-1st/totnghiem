@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +24,7 @@ public class PayOSController {
     }
 
     @PostMapping("/create")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // THÊM xác thực
     public ResponseEntity<?> createPayment(@RequestBody CreatePaymentRequest req) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("orderCode", req.getOrderCode());
@@ -36,8 +38,6 @@ public class PayOSController {
         }
 
         Map<String, Object> res = payOsClient.createPaymentLink(payload);
-
-        // Trả về toàn bộ response
         return ResponseEntity.ok(res);
     }
 }

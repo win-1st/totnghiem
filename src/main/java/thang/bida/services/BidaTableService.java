@@ -40,7 +40,6 @@ public class BidaTableService {
     }
 
     public BidaTable createTable(BidaTable table) {
-        // Kiểm tra số bàn đã tồn tại
         BidaTable existingTable = tableRepository.findByNumber(table.getNumber());
         if (existingTable != null) {
             throw new RuntimeException("Số bàn " + table.getNumber() + " đã tồn tại!");
@@ -53,7 +52,6 @@ public class BidaTableService {
         BidaTable table = tableRepository.findById(tableId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn với ID: " + tableId));
 
-        // Kiểm tra xem bàn có đang được sử dụng không
         if (table.getStatus() == BidaTable.TableStatus.OCCUPIED) {
             throw new RuntimeException("Không thể xóa bàn đang được sử dụng!");
         }
@@ -75,6 +73,7 @@ public class BidaTableService {
             dto.setCapacity(table.getCapacity());
             dto.setStatus(table.getStatus());
 
+            // Lấy thông tin order nếu bàn đang có khách
             if (table.getStatus() == BidaTable.TableStatus.OCCUPIED) {
                 orderRepository.findActiveOrderByTable(table.getId())
                         .stream()
@@ -87,5 +86,31 @@ public class BidaTableService {
 
             return dto;
         }).toList();
+    }
+
+    // THÊM METHOD NÀY
+    public TableDTO getTableDTOById(Long id) {
+        BidaTable table = tableRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn với ID: " + id));
+
+        TableDTO dto = new TableDTO();
+        dto.setId(table.getId());
+        dto.setNumber(table.getNumber());
+        dto.setTableName(table.getTableName());
+        dto.setCapacity(table.getCapacity());
+        dto.setStatus(table.getStatus());
+
+        // Lấy thông tin order nếu bàn đang có khách
+        if (table.getStatus() == BidaTable.TableStatus.OCCUPIED) {
+            orderRepository.findActiveOrderByTable(table.getId())
+                    .stream()
+                    .findFirst()
+                    .ifPresent(order -> {
+                        dto.setCurrentOrderId(order.getId());
+                        dto.setStartTime(order.getStartTime());
+                    });
+        }
+
+        return dto;
     }
 }

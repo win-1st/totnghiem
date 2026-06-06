@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import thang.bida.dto.TableDTO;
 import thang.bida.model.BidaTable;
 import thang.bida.services.BidaTableService;
 import thang.bida.payload.request.TableRequest;
@@ -26,7 +27,8 @@ public class BidaTableController {
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> getAllTables() {
-        List<BidaTable> tables = tableService.getAllTables();
+        // SỬA: Dùng DTO thay vì entity
+        List<TableDTO> tables = tableService.getAllTableDTO();
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
@@ -48,6 +50,25 @@ public class BidaTableController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public ResponseEntity<?> getTableById(@PathVariable Long id) {
+        try {
+            TableDTO table = tableService.getTableDTOById(id);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", table);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> createTable(@RequestBody TableRequest request) {
@@ -57,7 +78,7 @@ public class BidaTableController {
             table.setNumber(request.getNumber());
             table.setCapacity(request.getCapacity());
             table.setStatus(BidaTable.TableStatus.FREE);
-            table.setType("STANDARD"); // Mặc định
+            table.setType("STANDARD");
             table.setVersion(0);
 
             BidaTable savedTable = tableService.createTable(table);
