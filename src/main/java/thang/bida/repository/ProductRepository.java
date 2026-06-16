@@ -43,4 +43,5 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     // Thêm method tìm featured products
     List<Product> findByFeaturedTrueAndActiveTrue();
+
 }

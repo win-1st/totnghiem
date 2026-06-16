@@ -31,6 +31,28 @@ public class BidaTableService {
         return tableRepository.findByStatus(BidaTable.TableStatus.FREE);
     }
 
+    // Lấy bàn đang sử dụng (OCCUPIED)
+    public List<BidaTable> getOccupiedTables() {
+        return tableRepository.findByStatus(BidaTable.TableStatus.OCCUPIED);
+    }
+
+    // Lấy bàn đã đặt (RESERVED)
+    public List<BidaTable> getReservedTables() {
+        return tableRepository.findByStatus(BidaTable.TableStatus.RESERVED);
+    }
+
+    // ========== THÊM METHOD NÀY ==========
+    // Lấy bàn đang bảo trì (MAINTENANCE)
+    public List<BidaTable> getMaintenanceTables() {
+        return tableRepository.findByStatus(BidaTable.TableStatus.MAINTENANCE);
+    }
+    // ========== END ==========
+
+    // Lấy bàn theo trạng thái (tổng quát)
+    public List<BidaTable> getTablesByStatus(BidaTable.TableStatus status) {
+        return tableRepository.findByStatus(status);
+    }
+
     @Transactional
     public BidaTable updateTableStatus(Long tableId, BidaTable.TableStatus status) {
         BidaTable table = tableRepository.findById(tableId)
@@ -72,8 +94,8 @@ public class BidaTableService {
             dto.setTableName(table.getTableName());
             dto.setCapacity(table.getCapacity());
             dto.setStatus(table.getStatus());
+            dto.setType(table.getType());
 
-            // Lấy thông tin order nếu bàn đang có khách
             if (table.getStatus() == BidaTable.TableStatus.OCCUPIED) {
                 orderRepository.findActiveOrderByTable(table.getId())
                         .stream()
@@ -88,7 +110,6 @@ public class BidaTableService {
         }).toList();
     }
 
-    // THÊM METHOD NÀY
     public TableDTO getTableDTOById(Long id) {
         BidaTable table = tableRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn với ID: " + id));
@@ -99,8 +120,8 @@ public class BidaTableService {
         dto.setTableName(table.getTableName());
         dto.setCapacity(table.getCapacity());
         dto.setStatus(table.getStatus());
+        dto.setType(table.getType());
 
-        // Lấy thông tin order nếu bàn đang có khách
         if (table.getStatus() == BidaTable.TableStatus.OCCUPIED) {
             orderRepository.findActiveOrderByTable(table.getId())
                     .stream()

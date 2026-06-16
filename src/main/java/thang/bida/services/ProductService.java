@@ -4,9 +4,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import thang.bida.dto.ProductRequest;
 import thang.bida.model.Category;
 import thang.bida.model.Product;
-import thang.bida.payload.request.ProductRequest;
 import thang.bida.repository.CategoryRepository;
 import thang.bida.repository.ProductRepository;
 

@@ -71,4 +71,5 @@ public class ProductTypeController {
             return ResponseEntity.status(404).body(response);
         }
     }
+
 }

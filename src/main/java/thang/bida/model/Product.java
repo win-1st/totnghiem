@@ -98,6 +98,9 @@ public class Product {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<InventoryTransaction> inventoryTransactions = new ArrayList<>();
+
     // Constructor với các field cần thiết
     public Product(String name, BigDecimal price, Category category) {
         this.name = name;

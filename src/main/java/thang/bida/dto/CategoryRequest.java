@@ -1,4 +1,4 @@
-package thang.bida.payload.request;
+package thang.bida.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

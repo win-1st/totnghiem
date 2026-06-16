@@ -3,6 +3,7 @@ package thang.bida.model;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -10,7 +11,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @Entity
 @Table(name = "users", uniqueConstraints = {
-        @UniqueConstraint(columnNames = "username"),
+        @UniqueConstraint(columnNames = "phone"),
         @UniqueConstraint(columnNames = "email")
 })
 @JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
@@ -22,12 +23,13 @@ public class User {
     private Long id;
 
     @NotBlank
-    @Size(max = 20)
-    private String username;
+    @Pattern(regexp = "(84|0[3|5|7|8|9])+([0-9]{8})\\b", message = "Số điện thoại không hợp lệ")
+    @Size(max = 15)
+    @Column(unique = true)
+    private String phone;
 
-    @NotBlank
-    @Size(max = 50)
     @Email
+    @Size(max = 50)
     private String email;
 
     @NotBlank
@@ -36,9 +38,6 @@ public class User {
 
     @Size(max = 100)
     private String fullName;
-
-    @Size(max = 15)
-    private String phone;
 
     @Size(max = 200)
     private String address;
@@ -62,10 +61,11 @@ public class User {
     public User() {
     }
 
-    public User(String username, String email, String password) {
-        this.username = username;
+    public User(String phone, String email, String password, Role role) {
+        this.phone = phone;
         this.email = email;
         this.password = password;
+        this.role = role;
     }
 
     @PrePersist
@@ -76,7 +76,7 @@ public class User {
             isActive = true;
         }
         if (role == null) {
-            role = Role.CUSTOMER; // Mặc định là CUSTOMER
+            role = Role.CUSTOMER;
         }
     }
 
@@ -89,7 +89,7 @@ public class User {
     public String toString() {
         return "User{" +
                 "id=" + id +
-                ", username='" + username + '\'' +
+                ", phone='" + phone + '\'' +
                 ", email='" + email + '\'' +
                 ", fullName='" + fullName + '\'' +
                 ", role=" + role +

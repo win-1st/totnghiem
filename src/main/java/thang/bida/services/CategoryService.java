@@ -3,8 +3,8 @@ package thang.bida.services;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import thang.bida.dto.CategoryRequest;
 import thang.bida.model.Category;
-import thang.bida.payload.request.CategoryRequest;
 import thang.bida.repository.CategoryRepository;
 
 import java.util.List;

@@ -12,8 +12,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import thang.bida.dto.ProductRequest;
 import thang.bida.model.Product;
-import thang.bida.payload.request.ProductRequest;
 import thang.bida.services.ProductService;
 
 @RestController
@@ -262,7 +262,6 @@ public class ProductController {
     }
 
     // === LẤY SẢN PHẨM KHÔNG PHẢI TIME_BASED ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
     @GetMapping("/non-time-based")
     public ResponseEntity<?> getNonTimeBasedProducts() {
         List<Product> products = productService.getAllNonTimeBasedProducts();

@@ -4,11 +4,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.Map;
+
+import thang.bida.dto.OrderStatusRequest;
 import thang.bida.model.Order;
 import thang.bida.model.OrderItem;
-import thang.bida.payload.request.OrderStatusRequest;
 import thang.bida.services.OrderService;
 import thang.bida.services.UserDetailsImpl;
 
@@ -63,6 +68,25 @@ public class OrderController {
         return ResponseEntity.ok(order.getItems());
     }
 
+    @GetMapping("/all")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public ResponseEntity<?> getAllOrders() {
+        List<Order> orders = orderService.getAllOrders();
+
+        List<Map<String, Object>> result = orders.stream().map(order -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", order.getId());
+            map.put("totalAmount", order.getTotalAmount());
+            map.put("status", order.getStatus());
+            map.put("createdAt", order.getCreatedAt());
+            map.put("tableNumber", order.getTable() != null ? order.getTable().getNumber() : null);
+            map.put("tableId", order.getTable() != null ? order.getTable().getId() : null);
+            return map;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(Map.of("success", true, "data", result, "count", result.size()));
+    }
+
     @PatchMapping("/{orderId}/status")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<Order> updateOrderStatus(
@@ -76,11 +100,17 @@ public class OrderController {
     public ResponseEntity<OrderItem> addItem(
             @PathVariable Long orderId,
             @RequestParam Long productId,
-            @RequestParam Integer quantity) {
+            @RequestParam Integer quantity,
+            @RequestParam(required = false) BigDecimal unitPrice) { // 🆕 Thêm unitPrice
         System.out.println("=== ADD ITEM ===");
         System.out.println("Order ID: " + orderId);
         System.out.println("Product ID: " + productId);
         System.out.println("Quantity: " + quantity);
+        System.out.println("Unit Price: " + unitPrice);
+
+        if (unitPrice != null && unitPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return ResponseEntity.ok(orderService.addItemWithPrice(orderId, productId, quantity, unitPrice));
+        }
         return ResponseEntity.ok(orderService.addItem(orderId, productId, quantity));
     }
 
@@ -89,13 +119,27 @@ public class OrderController {
     public ResponseEntity<?> updateItem(
             @PathVariable Long orderId,
             @PathVariable Long itemId,
-            @RequestParam Integer quantity) {
+            @RequestParam Integer quantity,
+            @RequestParam(required = false) BigDecimal unitPrice) {
         System.out.println("=== UPDATE ITEM ===");
         System.out.println("Order ID: " + orderId);
         System.out.println("Item ID: " + itemId);
         System.out.println("Quantity: " + quantity);
 
-        orderService.updateItemQuantity(orderId, itemId, quantity);
+        orderService.updateItemQuantity(orderId, itemId, quantity, unitPrice);
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("/{orderId}/adjust-time")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    public ResponseEntity<?> adjustPlayTime(
+            @PathVariable Long orderId,
+            @RequestParam Integer additionalMinutes) {
+        System.out.println("=== ADJUST PLAY TIME ===");
+        System.out.println("Order ID: " + orderId);
+        System.out.println("Additional Minutes: " + additionalMinutes);
+
+        orderService.adjustPlayTime(orderId, additionalMinutes);
         return ResponseEntity.ok().build();
     }
 

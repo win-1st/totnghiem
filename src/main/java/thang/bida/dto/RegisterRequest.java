@@ -1,17 +1,16 @@
 package thang.bida.dto;
 
-import lombok.Data;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import lombok.Data;
 
 @Data
-public class CreateStaffRequest {
+public class RegisterRequest {
     @NotBlank(message = "Số điện thoại không được để trống")
     @Pattern(regexp = "(84|0[3|5|7|8|9])+([0-9]{8})\\b", message = "Số điện thoại không hợp lệ")
-    @Size(min = 10, max = 11, message = "Số điện thoại phải có 10-11 số")
-    private String phone; // Đã sửa: username -> phone
+    private String phone; // Thay username bằng phone
 
     @NotBlank(message = "Email không được để trống")
     @Email(message = "Email không hợp lệ")
@@ -24,7 +23,5 @@ public class CreateStaffRequest {
     private String fullName;
     private String address;
     private String imageUrl;
-
-    @NotBlank(message = "Role không được để trống")
     private String role;
 }

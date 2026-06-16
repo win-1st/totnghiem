@@ -6,8 +6,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import thang.bida.dto.CategoryRequest;
 import thang.bida.model.Category;
-import thang.bida.payload.request.CategoryRequest;
 import thang.bida.services.CategoryService;
 import jakarta.validation.Valid;
 import java.util.HashMap;
@@ -129,7 +129,6 @@ public class CategoryController {
 
     // Phương thức lưu ảnh (tạm thời)
     private String saveImage(MultipartFile image) {
-        // TODO: implement image saving logic
         return "/uploads/" + image.getOriginalFilename();
     }
 

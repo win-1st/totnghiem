@@ -43,14 +43,13 @@ public class UserManagementController {
     public ResponseEntity<User> createStaff(@RequestBody CreateStaffRequest req) {
         return ResponseEntity.ok(
                 userService.createStaff(
-                        req.getUsername(),
+                        req.getPhone(), // Đã sửa: username -> phone
                         req.getEmail(),
                         req.getPassword(),
                         req.getFullName(),
-                        req.getPhone(),
                         req.getAddress(),
                         req.getImageUrl(),
-                        req.getRole())); // ← Truyền String role
+                        req.getRole()));
     }
 
     // Cập nhật nhân viên
@@ -61,14 +60,13 @@ public class UserManagementController {
         return ResponseEntity.ok(
                 userService.updateStaff(
                         id,
-                        req.getUsername(),
+                        req.getPhone(), // Đã sửa: username -> phone
                         req.getEmail(),
                         req.getPassword(),
                         req.getFullName(),
-                        req.getPhone(),
                         req.getAddress(),
                         req.getImageUrl(),
-                        req.getRole())); // ← Truyền String role
+                        req.getRole()));
     }
 
     // Khóa / mở tài khoản

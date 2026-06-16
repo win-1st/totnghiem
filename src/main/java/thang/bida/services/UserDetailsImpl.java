@@ -13,15 +13,15 @@ public class UserDetailsImpl implements UserDetails {
     private static final long serialVersionUID = 1L;
 
     private Long id;
-    private String username;
+    private String phone;
     private String email;
     private String fullName;
     private String password;
     private String role;
 
-    public UserDetailsImpl(Long id, String username, String email, String fullName, String password, String role) {
+    public UserDetailsImpl(Long id, String phone, String email, String fullName, String password, String role) {
         this.id = id;
-        this.username = username;
+        this.phone = phone;
         this.email = email;
         this.fullName = fullName;
         this.password = password;
@@ -31,9 +31,9 @@ public class UserDetailsImpl implements UserDetails {
     public static UserDetailsImpl build(User user) {
         return new UserDetailsImpl(
                 user.getId(),
-                user.getUsername(),
+                user.getPhone(), // Dùng phone thay vì username
                 user.getEmail(),
-                user.getFullName(), // ← THÊM DÒNG NÀY
+                user.getFullName(),
                 user.getPassword(),
                 user.getRole().name());
     }
@@ -58,7 +58,7 @@ public class UserDetailsImpl implements UserDetails {
 
     @Override
     public String getUsername() {
-        return username;
+        return phone; // Trả về phone
     }
 
     public String getEmail() {

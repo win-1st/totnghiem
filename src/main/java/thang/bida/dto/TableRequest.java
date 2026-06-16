@@ -1,4 +1,4 @@
-package thang.bida.payload.request;
+package thang.bida.dto;
 
 import lombok.Getter;
 import lombok.Setter;

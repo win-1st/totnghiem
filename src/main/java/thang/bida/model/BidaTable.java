@@ -11,7 +11,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @Getter
 @Setter
 @Entity
-@Table(name = "tables", indexes = {
+@Table(name = "bida_tables", indexes = {
         @Index(name = "idx_table_status", columnList = "status"),
         @Index(name = "idx_table_type", columnList = "type")
 })

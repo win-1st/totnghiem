@@ -3,7 +3,7 @@ package thang.bida.services;
 import thang.bida.model.*;
 import thang.bida.model.Order.OrderStatus;
 import thang.bida.repository.*;
-
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +21,7 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final WebSocketService webSocketService;
+    private final InventoryTransactionRepository inventoryTransactionRepository;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -28,13 +29,15 @@ public class OrderService {
             BidaTableRepository tableRepository,
             ProductRepository productRepository,
             UserRepository userRepository,
-            WebSocketService webSocketService) {
+            WebSocketService webSocketService,
+            InventoryTransactionRepository inventoryTransactionRepository) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.tableRepository = tableRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.webSocketService = webSocketService;
+        this.inventoryTransactionRepository = inventoryTransactionRepository;
     }
 
     // =====================================================
@@ -198,7 +201,7 @@ public class OrderService {
     // UPDATE ITEM QUANTITY - KHÔNG cập nhật stock
     // =====================================================
 
-    public void updateItemQuantity(Long orderId, Long itemId, Integer quantity) {
+    public void updateItemQuantity(Long orderId, Long itemId, Integer quantity, BigDecimal unitPrice) {
         Order order = getOrderById(orderId);
 
         OrderItem item = orderItemRepository.findById(itemId)
@@ -216,7 +219,12 @@ public class OrderService {
             orderItemRepository.delete(item);
         } else {
             item.setQuantity(quantity);
-            item.setSubtotal(product.getPrice().multiply(BigDecimal.valueOf(quantity)));
+            // 🆕 Nếu có unitPrice thì dùng, không thì dùng giá từ product
+            BigDecimal finalUnitPrice = (unitPrice != null && unitPrice.compareTo(BigDecimal.ZERO) > 0)
+                    ? unitPrice
+                    : product.getPrice();
+            item.setUnitPrice(finalUnitPrice);
+            item.setSubtotal(finalUnitPrice.multiply(BigDecimal.valueOf(quantity)));
             orderItemRepository.save(item);
         }
 
@@ -325,29 +333,47 @@ public class OrderService {
             return;
         }
 
+        // 🆕 Lấy user hiện tại
+        User currentUser = null;
+        try {
+            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            if (principal instanceof UserDetailsImpl) {
+                Long userId = ((UserDetailsImpl) principal).getId();
+                currentUser = userRepository.findById(userId).orElse(null);
+            }
+        } catch (Exception e) {
+            System.out.println("Không lấy được user: " + e.getMessage());
+        }
+
         for (OrderItem item : order.getItems()) {
             Product product = item.getProduct();
             if (!product.isTimeBased() && item.getQuantity() > 0) {
                 int quantity = item.getQuantity();
+                int beforeQty = product.getStockQuantity();
 
-                // Kiểm tra tồn kho - sử dụng getStockQuantity()
-                if (product.getStockQuantity() < quantity) {
+                if (beforeQty < quantity) {
                     throw new RuntimeException(
-                            "Sản phẩm " + product.getName() + " không đủ số lượng. Còn: " + product.getStockQuantity());
+                            "Sản phẩm " + product.getName() + " không đủ số lượng. Còn: " + beforeQty);
                 }
 
-                // Trừ stock - sử dụng decreaseStock()
                 product.decreaseStock(quantity);
                 productRepository.save(product);
-                System.out.println("✅ Đã trừ stock: " + product.getName() + " x" + quantity);
+
+                // 🆕 Ghi log kho
+                InventoryTransaction tx = new InventoryTransaction(
+                        product, currentUser,
+                        InventoryTransaction.TransactionType.EXPORT,
+                        quantity, beforeQty, beforeQty - quantity,
+                        "Bán hàng - Order #" + orderId);
+                inventoryTransactionRepository.save(tx);
+                System.out.println("📦 Đã ghi log xuất kho: " + product.getName() + " -" + quantity);
             }
         }
 
         order.setStockDeducted(true);
         orderRepository.save(order);
-        System.out.println("✅ Đã đánh dấu đã trừ stock cho order " + orderId);
+        System.out.println("✅ Đã trừ stock + ghi log kho cho order " + orderId);
     }
-
     // =====================================================
     // REFUND STOCK - Gọi khi hủy đơn (nếu đã trừ stock)
     // =====================================================
@@ -452,5 +478,103 @@ public class OrderService {
                         o.getStatus() == OrderStatus.WAITING_PAYMENT)
                 .reduce((first, second) -> second)
                 .orElse(null);
+    }
+
+    public OrderItem addItemWithPrice(Long orderId, Long productId, Integer quantity, BigDecimal unitPrice) {
+        Order order = getOrderById(orderId);
+
+        if (order.getStatus() != OrderStatus.OPEN) {
+            throw new RuntimeException("Không thể thêm món khi đã kết thúc chơi");
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        // 🆕 Xử lý TIME_BASED
+        if (product.isTimeBased()) {
+            if (order.getTimeBasedProduct() != null) {
+                throw new RuntimeException("Bàn đã có dịch vụ tính giờ rồi!");
+            }
+            if (quantity > 1) {
+                throw new RuntimeException("Chỉ được chọn 1 lần dịch vụ tính giờ!");
+            }
+
+            order.setTimeBasedProduct(product);
+            if (order.getStartTime() == null) {
+                order.setStartTime(LocalDateTime.now());
+            }
+
+            BigDecimal initialPrice = product.getPricePerMinute() != null ? product.getPricePerMinute()
+                    : BigDecimal.ZERO;
+            OrderItem timeItem = new OrderItem(order, product, 1, initialPrice);
+            timeItem.setSubtotal(BigDecimal.ZERO);
+            orderItemRepository.save(timeItem);
+            order.getItems().add(timeItem);
+
+            updateOrderTotal(orderId);
+            webSocketService.notifyOrderUpdate(order);
+            return timeItem;
+        }
+
+        // FOOD/DRINK - giữ nguyên logic cũ
+        OrderItem item = orderItemRepository
+                .findByOrderIdAndProductId(orderId, productId)
+                .orElse(new OrderItem(order, product, 0, unitPrice));
+
+        item.setQuantity(item.getQuantity() + quantity);
+        BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
+        item.setSubtotal(subtotal);
+        item.setUnitPrice(unitPrice);
+        orderItemRepository.save(item);
+
+        if (!order.getItems().contains(item)) {
+            order.getItems().add(item);
+        }
+
+        updateOrderTotal(orderId);
+        webSocketService.notifyOrderUpdate(order);
+        return item;
+    }
+
+    @Transactional
+    public void adjustPlayTime(Long orderId, Integer additionalMinutes) {
+        Order order = getOrderById(orderId);
+
+        if (order.getStatus() != OrderStatus.OPEN) {
+            throw new RuntimeException("Chỉ có thể điều chỉnh thời gian khi đơn hàng đang mở");
+        }
+
+        if (order.getTimeBasedProduct() == null) {
+            throw new RuntimeException("Đơn hàng chưa có dịch vụ tính giờ");
+        }
+
+        if (order.getStartTime() == null) {
+            throw new RuntimeException("Chưa có thời gian bắt đầu");
+        }
+
+        // Lưu lại thời gian cũ để log
+        LocalDateTime oldStartTime = order.getStartTime();
+
+        // Điều chỉnh thời gian bắt đầu (cộng thêm phút)
+        // additionalMinutes có thể âm (giảm thời gian) hoặc dương (tăng thời gian)
+        LocalDateTime newStartTime = oldStartTime.minusMinutes(additionalMinutes);
+        order.setStartTime(newStartTime);
+
+        // Log chi tiết
+        System.out.println("⏱️ Điều chỉnh thời gian cho order " + orderId);
+        System.out.println("   - Thời gian cũ: " + oldStartTime);
+        System.out.println("   - Thay đổi: " + additionalMinutes + " phút");
+        System.out.println("   - Thời gian mới: " + newStartTime);
+
+        // Lưu order
+        orderRepository.save(order);
+
+        // Cập nhật lại tổng tiền
+        updateOrderTotal(orderId);
+
+        // Notify qua WebSocket
+        webSocketService.notifyOrderUpdate(order);
+
+        System.out.println("✅ Đã điều chỉnh thời gian thành công!");
     }
 }

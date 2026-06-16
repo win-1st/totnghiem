@@ -36,6 +36,8 @@ public class Order {
     // =========================
     // RELATIONSHIP
     // =========================
+    @OneToOne(mappedBy = "order")
+    private Bill bill;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "table_id")

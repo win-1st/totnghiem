@@ -7,7 +7,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.BindingResult;
@@ -16,13 +15,12 @@ import org.springframework.web.bind.annotation.*;
 import thang.bida.dto.ApiResponse;
 import thang.bida.dto.ChangePasswordRequest;
 import thang.bida.dto.ForgotPasswordRequest;
+import thang.bida.dto.JwtResponse;
 import thang.bida.dto.ResetPasswordRequest;
 import thang.bida.dto.VerifyOtpRequest;
 import thang.bida.model.User;
-import thang.bida.payload.request.LoginRequest;
-import thang.bida.payload.request.SignupRequest;
-import thang.bida.payload.response.JwtResponse;
-import thang.bida.payload.response.MessageResponse;
+import thang.bida.dto.LoginRequest;
+import thang.bida.dto.RegisterRequest;
 import thang.bida.repository.UserRepository;
 import thang.bida.security.jwt.JwtUtils;
 import thang.bida.services.PasswordResetService;
@@ -46,7 +44,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final PasswordResetService passwordResetService;
     private final UserService userService;
-    private final UserDetailsService userDetailsService; // ← THÊM DÒNG NÀY
+    private final UserDetailsService userDetailsService;
 
     public AuthController(UserRepository userRepository,
             PasswordEncoder passwordEncoder,
@@ -54,14 +52,14 @@ public class AuthController {
             AuthenticationManager authenticationManager,
             PasswordResetService passwordResetService,
             UserService userService,
-            UserDetailsService userDetailsService) { // ← THÊM THAM SỐ
+            UserDetailsService userDetailsService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
         this.authenticationManager = authenticationManager;
         this.passwordResetService = passwordResetService;
         this.userService = userService;
-        this.userDetailsService = userDetailsService; // ← THÊM DÒNG NÀY
+        this.userDetailsService = userDetailsService;
     }
 
     @GetMapping("/health")
@@ -70,30 +68,28 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
-        if (userService.existsByUsername(signUpRequest.getUsername())) {
+    public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest signUpRequest) {
+        if (userService.existsByPhone(signUpRequest.getPhone())) {
             return ResponseEntity
                     .badRequest()
-                    .body(new MessageResponse("Error: Username is already taken!"));
+                    .body(Map.of("message", "Số điện thoại đã được đăng ký!"));
         }
 
         if (userService.existsByEmail(signUpRequest.getEmail())) {
             return ResponseEntity
                     .badRequest()
-                    .body(new MessageResponse("Error: Email is already in use!"));
+                    .body(Map.of("message", "Email đã được sử dụng!"));
         }
 
         userService.registerUser(signUpRequest);
-
-        return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+        return ResponseEntity.ok(Map.of("message", "Đăng ký thành công!"));
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
-
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
-                        loginRequest.getUsername(),
+                        loginRequest.getPhone(),
                         loginRequest.getPassword()));
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -102,7 +98,6 @@ public class AuthController {
 
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
 
-        // SỬA ĐOẠN NÀY
         List<String> roles = userDetails.getAuthorities().stream()
                 .map(item -> item.getAuthority().replace("ROLE_", ""))
                 .collect(Collectors.toList());
@@ -129,11 +124,10 @@ public class AuthController {
 
         Map<String, Object> response = new HashMap<>();
         response.put("id", user.getId());
-        response.put("username", user.getUsername());
+        response.put("phone", user.getPhone());
         response.put("email", user.getEmail());
         response.put("fullName", user.getFullName());
         response.put("imageUrl", user.getImageUrl());
-        response.put("phone", user.getPhone());
         response.put("address", user.getAddress());
         response.put("role", user.getRole() != null ? user.getRole().name() : "CUSTOMER");
 
@@ -151,13 +145,13 @@ public class AuthController {
         if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
             return ResponseEntity
                     .badRequest()
-                    .body("Mật khẩu hiện tại không đúng");
+                    .body(Map.of("message", "Mật khẩu hiện tại không đúng"));
         }
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        return ResponseEntity.ok("Đổi mật khẩu thành công");
+        return ResponseEntity.ok(Map.of("message", "Đổi mật khẩu thành công"));
     }
 
     @GetMapping("/validate-token")
@@ -243,6 +237,62 @@ public class AuthController {
         } else {
             return ResponseEntity.badRequest().body(new ApiResponse(false,
                     "Không thể gửi lại mã OTP. Vui lòng thử lại."));
+        }
+    }
+
+    @PutMapping("/update-profile")
+    public ResponseEntity<?> updateProfile(
+            @AuthenticationPrincipal UserDetailsImpl userDetails,
+            @Valid @RequestBody Map<String, String> profileRequest) {
+
+        try {
+            User user = userRepository.findById(userDetails.getId())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // Cập nhật thông tin
+            if (profileRequest.containsKey("fullName")) {
+                user.setFullName(profileRequest.get("fullName"));
+            }
+            if (profileRequest.containsKey("email")) {
+                String newEmail = profileRequest.get("email");
+                if (!newEmail.equals(user.getEmail()) && userService.existsByEmail(newEmail)) {
+                    return ResponseEntity
+                            .badRequest()
+                            .body(Map.of("message", "Email đã được sử dụng bởi tài khoản khác"));
+                }
+                user.setEmail(newEmail);
+            }
+            if (profileRequest.containsKey("phone")) {
+                String newPhone = profileRequest.get("phone");
+                if (!newPhone.equals(user.getPhone()) && userService.existsByPhone(newPhone)) {
+                    return ResponseEntity
+                            .badRequest()
+                            .body(Map.of("message", "Số điện thoại đã được sử dụng bởi tài khoản khác"));
+                }
+                user.setPhone(newPhone);
+            }
+            if (profileRequest.containsKey("address")) {
+                user.setAddress(profileRequest.get("address"));
+            }
+
+            userRepository.save(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Cập nhật thông tin thành công");
+            response.put("data", Map.of(
+                    "id", user.getId(),
+                    "phone", user.getPhone(),
+                    "fullName", user.getFullName(),
+                    "email", user.getEmail(),
+                    "address", user.getAddress(),
+                    "role", user.getRole() != null ? user.getRole().name() : "CUSTOMER"));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", "Cập nhật thất bại: " + e.getMessage()));
         }
     }
 }

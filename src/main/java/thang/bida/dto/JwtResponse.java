@@ -1,4 +1,4 @@
-package thang.bida.payload.response;
+package thang.bida.dto;
 
 import java.util.List;
 import lombok.Getter;

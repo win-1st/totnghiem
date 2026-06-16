@@ -1,9 +1,20 @@
 package thang.bida.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "promotion_products")
+@Table(name = "promotion_products", uniqueConstraints = {
+        @UniqueConstraint(columnNames = { "promotion_id", "product_id" })
+})
+@Getter
+@Setter
+@NoArgsConstructor
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 public class PromotionProduct {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -17,37 +28,8 @@ public class PromotionProduct {
     @JoinColumn(name = "product_id")
     private Product product;
 
-    // Constructors
-    public PromotionProduct() {
-    }
-
     public PromotionProduct(Promotion promotion, Product product) {
         this.promotion = promotion;
-        this.product = product;
-    }
-
-    // Getters and Setters
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public Promotion getPromotion() {
-        return promotion;
-    }
-
-    public void setPromotion(Promotion promotion) {
-        this.promotion = promotion;
-    }
-
-    public Product getProduct() {
-        return product;
-    }
-
-    public void setProduct(Product product) {
         this.product = product;
     }
 }

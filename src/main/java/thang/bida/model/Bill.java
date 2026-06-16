@@ -8,17 +8,25 @@ import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 @Getter
 @Setter
 @Entity
 @Table(name = "bills")
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
 public class Bill {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "order_id", insertable = false, updatable = false)
+    private Long orderId;
+
     @OneToOne
     @JoinColumn(name = "order_id")
+    @JsonIgnore
     private Order order;
 
     @Column(name = "total_amount", precision = 10, scale = 2)

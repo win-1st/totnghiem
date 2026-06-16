@@ -45,10 +45,8 @@ public class PayOSWebhookController {
             // 00 = success, 01 = cancelled
             if ("01".equals(code)) {
                 System.out.println(">>> Payment cancelled for order: " + orderCode);
-                // TODO: Update order status in database
             } else if ("00".equals(code)) {
                 System.out.println(">>> Payment success for order: " + orderCode);
-                // TODO: Update order status in database
             }
 
             return ResponseEntity.ok(Map.of("success", true));

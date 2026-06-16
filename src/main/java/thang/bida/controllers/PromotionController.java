@@ -1,6 +1,5 @@
 package thang.bida.controllers;
 
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -10,7 +9,6 @@ import thang.bida.model.Product;
 import thang.bida.model.PromotionProduct;
 import thang.bida.services.PromotionService;
 
-import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +28,7 @@ public class PromotionController {
 
     // Lấy tất cả khuyến mãi
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getAllPromotions() {
         List<Promotion> promotions = promotionService.getAllPromotions();
 
@@ -45,7 +43,6 @@ public class PromotionController {
 
     // Lấy khuyến mãi đang hoạt động
     @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
     public ResponseEntity<?> getActivePromotions() {
         List<Promotion> promotions = promotionService.getActivePromotions();
 
@@ -60,7 +57,6 @@ public class PromotionController {
 
     // Lấy khuyến mãi hiện tại (đang trong thời gian áp dụng)
     @GetMapping("/current")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
     public ResponseEntity<?> getCurrentPromotions() {
         List<Promotion> promotions = promotionService.getCurrentPromotions();
 
@@ -204,7 +200,6 @@ public class PromotionController {
 
     // Lấy danh sách sản phẩm trong khuyến mãi
     @GetMapping("/{promotionId}/products")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<?> getProductsInPromotion(@PathVariable Long promotionId) {
         try {
             List<Product> products = promotionService.getProductsInPromotion(promotionId);

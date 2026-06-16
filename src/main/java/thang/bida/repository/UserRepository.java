@@ -15,7 +15,10 @@ import thang.bida.model.User;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    // Các method cơ bản
+    // THÊM method findByPhone
+    Optional<User> findByPhone(String phone);
+
+    // Giữ lại findByUsername cũ nếu cần (có thể bỏ)
     Optional<User> findByUsername(String username);
 
     Optional<User> findByEmail(String email);
@@ -24,23 +27,20 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Boolean existsByEmail(String email);
 
-    // Tìm user theo role (Enum) - DÙNG CÁI NÀY
+    // THÊM method existsByPhone
+    Boolean existsByPhone(String phone);
+
     List<User> findByRole(Role role);
 
-    // Tìm user theo role (dùng @Query)
     @Query("SELECT u FROM User u WHERE u.role = :role")
     List<User> findUsersByRole(@Param("role") Role role);
 
-    // Tìm user active theo role
     List<User> findByIsActiveTrueAndRole(Role role);
 
-    // Tìm user theo tên (like)
     List<User> findByFullNameContaining(String name);
 
-    // Tìm user mới nhất
     List<User> findTop5ByOrderByCreatedAtDesc();
 
-    // Thống kê
     long countByRole(Role role);
 
     long countByCreatedAtAfter(LocalDateTime time);
@@ -49,11 +49,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
 
-    // Kiểm tra email tồn tại với user khác (dùng cho update)
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.email = :email AND u.id != :userId")
     Boolean existsByEmailAndIdNot(@Param("email") String email, @Param("userId") Long userId);
 
-    // Kiểm tra username tồn tại với user khác
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.username = :username AND u.id != :userId")
     Boolean existsByUsernameAndIdNot(@Param("username") String username, @Param("userId") Long userId);
 }

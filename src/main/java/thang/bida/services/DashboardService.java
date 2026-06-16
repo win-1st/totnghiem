@@ -259,7 +259,7 @@ public class DashboardService {
                     Map<String, Object> activity = new HashMap<>();
                     activity.put("time", user.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm")));
                     activity.put("content", String.format("Người dùng mới: %s (%s)",
-                            user.getFullName() != null ? user.getFullName() : user.getUsername(),
+                            user.getFullName() != null ? user.getFullName() : user.getPhone(),
                             user.getEmail()));
                     activity.put("color", "purple");
                     activities.add(activity);

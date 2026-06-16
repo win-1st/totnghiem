@@ -60,6 +60,7 @@ public class PromotionService {
         }
 
         promotion.setName(promotionDetails.getName());
+        promotion.setDescription(promotionDetails.getDescription()); // ✅ THÊM DÒNG NÀY
         promotion.setDiscountPercentage(promotionDetails.getDiscountPercentage());
         promotion.setDiscountAmount(promotionDetails.getDiscountAmount());
         promotion.setStartDate(promotionDetails.getStartDate());
