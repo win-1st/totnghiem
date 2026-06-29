@@ -113,6 +113,7 @@ public class PromotionService {
     }
 
     // === PRODUCT MANAGEMENT ===
+    @Transactional
     public boolean addProductToPromotion(Long promotionId, Long productId) {
         Optional<Promotion> promotion = promotionRepository.findById(promotionId);
         Optional<Product> product = productRepository.findById(productId);

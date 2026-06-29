@@ -52,7 +52,7 @@ public class ProductController {
     }
 
     // === LẤY TẤT CẢ SẢN PHẨM ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     @GetMapping
     public ResponseEntity<?> getAllProducts() {
         List<Product> products = productService.getAllProducts();
@@ -67,7 +67,7 @@ public class ProductController {
     }
 
     // === LẤY SẢN PHẨM TIME_BASED ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     @GetMapping("/time-based")
     public ResponseEntity<?> getTimeBasedProduct() {
         try {
@@ -89,7 +89,7 @@ public class ProductController {
     }
 
     // === LẤY SẢN PHẨM ĐANG HOẠT ĐỘNG ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     @GetMapping("/active")
     public ResponseEntity<?> getActiveProducts() {
         List<Product> products = productService.getActiveProducts();
@@ -104,7 +104,7 @@ public class ProductController {
     }
 
     // === LẤY SẢN PHẨM THEO ID ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     @GetMapping("/{id}")
     public ResponseEntity<?> getProductById(@PathVariable Long id) {
         Optional<Product> productOpt = productService.getProductById(id);
@@ -125,7 +125,7 @@ public class ProductController {
     }
 
     // === LẤY SẢN PHẨM THEO DANH MỤC ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     @GetMapping("/category/{categoryId}")
     public ResponseEntity<?> getProductsByCategory(@PathVariable Long categoryId) {
         List<Product> products = productService.getProductsByCategory(categoryId);
@@ -140,7 +140,7 @@ public class ProductController {
     }
 
     // === TÌM KIẾM SẢN PHẨM ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     @GetMapping("/search")
     public ResponseEntity<?> searchProducts(@RequestParam String keyword) {
         List<Product> products = productService.searchProducts(keyword);
@@ -324,7 +324,7 @@ public class ProductController {
      * API: Lấy danh sách sản phẩm có thể đổi điểm
      * GET /api/products/redeemable
      */
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     @GetMapping("/redeemable")
     public ResponseEntity<?> getRedeemableProducts() {
         try {

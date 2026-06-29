@@ -79,7 +79,7 @@ public class ReservationController {
 
     // Lấy đặt bàn theo ID
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF',  'CUSTOMER')")
     public ResponseEntity<?> getReservationById(@PathVariable Long id) {
         try {
             ReservationDTO reservation = reservationService.getReservationById(id);
@@ -124,7 +124,7 @@ public class ReservationController {
 
     // Kiểm tra bàn có trống không
     @GetMapping("/check-availability")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF',  'CUSTOMER')")
     public ResponseEntity<?> checkAvailability(
             @RequestParam Long tableId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
@@ -188,7 +188,7 @@ public class ReservationController {
 
     // Hủy đặt bàn
     @PatchMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF',  'CUSTOMER')")
     public ResponseEntity<?> cancelReservation(
             @PathVariable Long id,
             @RequestParam(required = false) String reason) {

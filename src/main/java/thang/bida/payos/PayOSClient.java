@@ -136,8 +136,6 @@ public class PayOSClient {
         SecretKeySpec secret = new SecretKeySpec(checksumKey.getBytes("UTF-8"), "HmacSHA256");
         hmac.init(secret);
         byte[] hash = hmac.doFinal(data.getBytes("UTF-8"));
-
-        // Convert sang hex string
         return bytesToHex(hash);
     }
 

@@ -33,7 +33,7 @@ public class BillController {
 
     // Tạo hóa đơn - Hỗ trợ customerPhone và promotionId
     @PostMapping("/create")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> createBill(
             @RequestParam Long orderId,
             @RequestParam PaymentMethod method,
@@ -110,20 +110,20 @@ public class BillController {
     }
 
     @GetMapping("/order/{orderId}")
-    @PreAuthorize("hasAnyRole('STAFF','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
     public ResponseEntity<Bill> getBillByOrder(@PathVariable Long orderId) {
         return ResponseEntity.ok(billService.getBillByOrder(orderId));
     }
 
     @PatchMapping("/{billId}/pay-cash")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> payCash(@PathVariable Long billId) {
         billService.confirmCashPayment(billId);
         return ResponseEntity.ok().build();
     }
 
     @PatchMapping("/{billId}/confirm-momo")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> confirmMomo(@PathVariable Long billId) {
         billService.confirmMomoPayment(billId);
         return ResponseEntity.ok().build();

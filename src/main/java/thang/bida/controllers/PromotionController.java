@@ -365,7 +365,7 @@ public class PromotionController {
 
     // Kiểm tra khuyến mãi có đang hoạt động không
     @GetMapping("/{id}/check-active")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> isPromotionActive(@PathVariable Long id) {
         boolean isActive = promotionService.isPromotionActive(id);
 

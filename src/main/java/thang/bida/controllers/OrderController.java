@@ -131,7 +131,7 @@ public class OrderController {
     }
 
     @PatchMapping("/{orderId}/adjust-time")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> adjustPlayTime(
             @PathVariable Long orderId,
             @RequestParam Integer additionalMinutes) {

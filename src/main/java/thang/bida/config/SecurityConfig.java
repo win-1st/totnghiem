@@ -71,7 +71,7 @@ public class SecurityConfig {
                                                 // ✅ THÊM: API lấy lịch sử đặt bàn của customer
                                                 .requestMatchers("/api/reservations/my-reservations").authenticated()
                                                 .requestMatchers(HttpMethod.GET, "/api/reservations/phone/**")
-                                                .hasAnyRole("ADMIN", "STAFF", "MANAGER")
+                                                .hasAnyRole("ADMIN", "STAFF")
 
                                                 .requestMatchers(HttpMethod.GET, "/api/tables/status/**").permitAll()
 

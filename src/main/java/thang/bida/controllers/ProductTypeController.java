@@ -24,7 +24,7 @@ public class ProductTypeController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> getAllProductTypes() {
         List<ProductTypeDTO> productTypes = productTypeService.getAllActiveProductTypes();
 
@@ -38,7 +38,7 @@ public class ProductTypeController {
     }
 
     @GetMapping("/non-time-based")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getNonTimeBasedTypes() {
         List<ProductTypeDTO> productTypes = productTypeService.getAllActiveProductTypes()
                 .stream()
@@ -54,7 +54,7 @@ public class ProductTypeController {
     }
 
     @GetMapping("/{code}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> getProductTypeByCode(@PathVariable String code) {
         try {
             ProductTypeDTO productType = productTypeService.getByCode(code);

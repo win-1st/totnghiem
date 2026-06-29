@@ -24,7 +24,7 @@ public class TimeBasedController {
 
     // Lấy thông tin cấu hình tiền giờ
     @GetMapping("/config")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> getTimeBasedConfig() {
         try {
             Product timeProduct = billingService.getTimeBasedProduct();
@@ -83,7 +83,7 @@ public class TimeBasedController {
 
     // Kiểm tra cấu hình
     @GetMapping("/check")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<?> checkConfig() {
         boolean hasConfig = billingService.hasTimeBasedProduct();
 
