@@ -150,7 +150,6 @@ public class BillService {
             newCp.setPhone(phone);
             newCp.setCustomerName("Khách hàng " + phone);
             newCp.setTotalPoints(points);
-            newCp.setTotalHoursPlayed(0);
             customerPointRepository.save(newCp);
             System.out.println("⭐ Đã tạo mới và cộng " + points + " điểm cho KH: " + phone);
         }

@@ -5,7 +5,10 @@ import thang.bida.model.Order.OrderStatus;
 import thang.bida.repository.*;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -13,6 +16,7 @@ import java.util.List;
 
 @Service
 @Transactional
+@Slf4j
 public class OrderService {
 
     private final OrderRepository orderRepository;
@@ -21,7 +25,7 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final WebSocketService webSocketService;
-    private final InventoryTransactionRepository inventoryTransactionRepository;
+    private final InventoryService inventoryService;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -30,47 +34,14 @@ public class OrderService {
             ProductRepository productRepository,
             UserRepository userRepository,
             WebSocketService webSocketService,
-            InventoryTransactionRepository inventoryTransactionRepository) {
+            InventoryService inventoryService) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.tableRepository = tableRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.webSocketService = webSocketService;
-        this.inventoryTransactionRepository = inventoryTransactionRepository;
-    }
-
-    // =====================================================
-    // PRIVATE COMMON LOGIC
-    // =====================================================
-
-    // ✅ Sửa: dùng stockQuantity
-    private void updateStockAfterPayment(Product product, int quantity) {
-        if (product.isTimeBased()) {
-            System.out.println("✅ TIME_BASED product '" + product.getName() + "' - skipping stock check");
-            return;
-        }
-
-        // Sử dụng stockQuantity (field trong Product)
-        if (product.getStockQuantity() < quantity) {
-            throw new RuntimeException(
-                    "Sản phẩm " + product.getName() + " không đủ số lượng. Còn: " + product.getStockQuantity());
-        }
-
-        product.decreaseStock(quantity); // Dùng method có sẵn trong Product
-        productRepository.save(product);
-        System.out.println("✅ Đã trừ stock: " + product.getName() + " - " + quantity);
-    }
-
-    private void recalcAndNotify(Order order) {
-        updateOrderTotal(order.getId());
-        webSocketService.notifyOrderUpdate(order);
-    }
-
-    private OrderItem getOrderItem(Long orderId, Long productId) {
-        return orderItemRepository
-                .findByOrderIdAndProductId(orderId, productId)
-                .orElseThrow(() -> new RuntimeException("Order item not found"));
+        this.inventoryService = inventoryService;
     }
 
     // =====================================================
@@ -98,6 +69,7 @@ public class OrderService {
     // OPEN ORDER
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public Order openOrder(Long tableId, Long employeeId) {
         BidaTable table = tableRepository.findById(tableId)
                 .orElseThrow(() -> new RuntimeException("Table not found"));
@@ -127,13 +99,15 @@ public class OrderService {
         webSocketService.notifyTableStatus(table.getId(), "OCCUPIED");
         webSocketService.notifyOrderUpdate(saved);
 
+        log.info("✅ Order {} opened for table {}", saved.getId(), tableId);
         return saved;
     }
 
     // =====================================================
-    // ADD ITEM TO ORDER - KHÔNG trừ stock ở đây
+    // ADD ITEM TO ORDER
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public Order addItemToOrder(Long orderId, Long productId, Integer quantity) {
         Order order = getOrderById(orderId);
 
@@ -144,37 +118,42 @@ public class OrderService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new RuntimeException("Product not found"));
 
+        // TIME_BASED product
         if (product.isTimeBased()) {
-            if (order.getTimeBasedProduct() != null) {
-                throw new RuntimeException("Bàn đã có dịch vụ tính giờ rồi!");
-            }
-            if (quantity > 1) {
-                throw new RuntimeException("Chỉ được chọn 1 lần dịch vụ tính giờ!");
-            }
-
-            order.setTimeBasedProduct(product);
-
-            if (order.getStartTime() == null) {
-                order.setStartTime(LocalDateTime.now());
-                System.out.println("⏱️ Bắt đầu tính giờ từ: " + order.getStartTime());
-            }
-
-            BigDecimal initialPrice = product.getPricePerMinute() != null ? product.getPricePerMinute()
-                    : BigDecimal.ZERO;
-            OrderItem timeItem = new OrderItem(order, product, 1, initialPrice);
-            timeItem.setSubtotal(BigDecimal.ZERO);
-            orderItemRepository.save(timeItem);
-            order.getItems().add(timeItem);
-
-            // ✅ KHÔNG gọi recalcAndNotify vì updateOrderTotal sẽ xử lý TIME_BASED
-            updateOrderTotal(order.getId());
-            webSocketService.notifyOrderUpdate(order);
-            return order;
+            return addTimeBasedProduct(order, product);
         }
 
         // FOOD/DRINK
+        return addFoodDrinkProduct(order, product, quantity);
+    }
+
+    private Order addTimeBasedProduct(Order order, Product product) {
+        if (order.getTimeBasedProduct() != null) {
+            throw new RuntimeException("Bàn đã có dịch vụ tính giờ rồi!");
+        }
+
+        order.setTimeBasedProduct(product);
+
+        if (order.getStartTime() == null) {
+            order.setStartTime(LocalDateTime.now());
+            log.info("⏱️ Started timing for order {}", order.getId());
+        }
+
+        BigDecimal initialPrice = product.getPricePerMinute() != null ? product.getPricePerMinute() : BigDecimal.ZERO;
+        OrderItem timeItem = new OrderItem(order, product, 1, initialPrice);
+        timeItem.setSubtotal(BigDecimal.ZERO);
+        orderItemRepository.save(timeItem);
+        order.getItems().add(timeItem);
+
+        updateOrderTotal(order.getId());
+        webSocketService.notifyOrderUpdate(order);
+        log.info("✅ Added time-based product {} to order {}", product.getName(), order.getId());
+        return order;
+    }
+
+    private Order addFoodDrinkProduct(Order order, Product product, Integer quantity) {
         OrderItem item = orderItemRepository
-                .findByOrderIdAndProductId(orderId, productId)
+                .findByOrderIdAndProductId(order.getId(), product.getId())
                 .orElse(new OrderItem(order, product, 0, product.getPrice()));
 
         item.setQuantity(item.getQuantity() + quantity);
@@ -182,25 +161,94 @@ public class OrderService {
         item.setSubtotal(subtotal);
         orderItemRepository.save(item);
 
-        // Nếu item mới, thêm vào order
         if (!order.getItems().contains(item)) {
             order.getItems().add(item);
         }
 
         updateOrderTotal(order.getId());
         webSocketService.notifyOrderUpdate(order);
+        log.info("✅ Added {} x {} to order {}", quantity, product.getName(), order.getId());
         return order;
     }
 
     public OrderItem addItem(Long orderId, Long productId, Integer quantity) {
         addItemToOrder(orderId, productId, quantity);
-        return getOrderItem(orderId, productId);
+        return orderItemRepository
+                .findByOrderIdAndProductId(orderId, productId)
+                .orElseThrow(() -> new RuntimeException("Order item not found"));
     }
 
     // =====================================================
-    // UPDATE ITEM QUANTITY - KHÔNG cập nhật stock
+    // ADD ITEM WITH PRICE
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
+    public OrderItem addItemWithPrice(Long orderId, Long productId, Integer quantity, BigDecimal unitPrice) {
+        Order order = getOrderById(orderId);
+
+        if (order.getStatus() != OrderStatus.OPEN) {
+            throw new RuntimeException("Không thể thêm món khi đã kết thúc chơi");
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        if (product.isTimeBased()) {
+            return addTimeBasedProductWithPrice(order, product);
+        }
+
+        return addFoodDrinkProductWithPrice(order, product, quantity, unitPrice);
+    }
+
+    private OrderItem addTimeBasedProductWithPrice(Order order, Product product) {
+        if (order.getTimeBasedProduct() != null) {
+            throw new RuntimeException("Bàn đã có dịch vụ tính giờ rồi!");
+        }
+
+        order.setTimeBasedProduct(product);
+        if (order.getStartTime() == null) {
+            order.setStartTime(LocalDateTime.now());
+        }
+
+        BigDecimal initialPrice = product.getPricePerMinute() != null ? product.getPricePerMinute() : BigDecimal.ZERO;
+        OrderItem timeItem = new OrderItem(order, product, 1, initialPrice);
+        timeItem.setSubtotal(BigDecimal.ZERO);
+        orderItemRepository.save(timeItem);
+        order.getItems().add(timeItem);
+
+        updateOrderTotal(order.getId());
+        webSocketService.notifyOrderUpdate(order);
+        log.info("✅ Added time-based product {}", product.getName());
+        return timeItem;
+    }
+
+    private OrderItem addFoodDrinkProductWithPrice(Order order, Product product, Integer quantity,
+            BigDecimal unitPrice) {
+        OrderItem item = orderItemRepository
+                .findByOrderIdAndProductId(order.getId(), product.getId())
+                .orElse(new OrderItem(order, product, 0, unitPrice));
+
+        item.setQuantity(item.getQuantity() + quantity);
+        BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
+        item.setSubtotal(subtotal);
+        item.setUnitPrice(unitPrice);
+        orderItemRepository.save(item);
+
+        if (!order.getItems().contains(item)) {
+            order.getItems().add(item);
+        }
+
+        updateOrderTotal(order.getId());
+        webSocketService.notifyOrderUpdate(order);
+        log.info("✅ Added {} x {} with price {}", quantity, product.getName(), unitPrice);
+        return item;
+    }
+
+    // =====================================================
+    // UPDATE ITEM QUANTITY
+    // =====================================================
+
+    @Transactional(rollbackFor = Exception.class)
     public void updateItemQuantity(Long orderId, Long itemId, Integer quantity, BigDecimal unitPrice) {
         Order order = getOrderById(orderId);
 
@@ -214,18 +262,19 @@ public class OrderService {
         }
 
         if (quantity <= 0) {
-            // ❌ KHÔNG hoàn stock
+            // Không hoàn stock vì chưa trừ
             order.removeItem(item);
             orderItemRepository.delete(item);
+            log.info("✅ Removed item {} from order {}", itemId, orderId);
         } else {
-            item.setQuantity(quantity);
-            // 🆕 Nếu có unitPrice thì dùng, không thì dùng giá từ product
             BigDecimal finalUnitPrice = (unitPrice != null && unitPrice.compareTo(BigDecimal.ZERO) > 0)
                     ? unitPrice
                     : product.getPrice();
+            item.setQuantity(quantity);
             item.setUnitPrice(finalUnitPrice);
             item.setSubtotal(finalUnitPrice.multiply(BigDecimal.valueOf(quantity)));
             orderItemRepository.save(item);
+            log.info("✅ Updated item {} quantity to {}", itemId, quantity);
         }
 
         updateOrderTotal(orderId);
@@ -233,9 +282,10 @@ public class OrderService {
     }
 
     // =====================================================
-    // REMOVE ITEM - KHÔNG hoàn stock
+    // REMOVE ITEM
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public void removeItem(Long orderId, Long itemId) {
         Order order = getOrderById(orderId);
 
@@ -246,30 +296,29 @@ public class OrderService {
             throw new RuntimeException("Không thể xóa dịch vụ tính giờ! Hãy kết thúc order để tính tiền.");
         }
 
-        // ❌ KHÔNG hoàn stock
         order.removeItem(item);
         orderItemRepository.delete(item);
 
         updateOrderTotal(orderId);
         webSocketService.notifyOrderUpdate(order);
+        log.info("✅ Removed item {} from order {}", itemId, orderId);
     }
 
     // =====================================================
     // UPDATE ORDER TOTAL
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public void updateOrderTotal(Long orderId) {
         Order order = getOrderById(orderId);
 
+        // Tính tổng tiền sản phẩm (FOOD/DRINK)
         BigDecimal itemsTotal = order.getItems().stream()
                 .filter(item -> !item.getProduct().isTimeBased())
                 .map(OrderItem::getSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        System.out.println("=== UPDATE ORDER TOTAL ===");
-        System.out.println("Order ID: " + orderId);
-        System.out.println("Items total (food/drink): " + itemsTotal);
-
+        // Tính tiền bàn
         BigDecimal tableFee = BigDecimal.ZERO;
         if (order.getTimeBasedProduct() != null && order.getStartTime() != null) {
             long minutes = order.getMinutesPlayed();
@@ -293,12 +342,15 @@ public class OrderService {
         order.setTableFee(tableFee);
         order.setProductFee(itemsTotal);
         orderRepository.save(order);
+
+        log.debug("Order {} total: items={}, tableFee={}, total={}", orderId, itemsTotal, tableFee, total);
     }
 
     // =====================================================
     // FINISH PLAYING
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public Order finishPlaying(Long orderId) {
         Order order = getOrderById(orderId);
 
@@ -308,7 +360,7 @@ public class OrderService {
 
         if (order.getStartTime() != null) {
             order.setEndTime(LocalDateTime.now());
-            System.out.println("⏱️ Kết thúc tính giờ lúc: " + order.getEndTime());
+            log.info("⏱️ Finished timing at: {}", order.getEndTime());
         }
 
         updateOrderTotal(orderId);
@@ -317,126 +369,120 @@ public class OrderService {
         Order saved = orderRepository.save(order);
         webSocketService.notifyOrderUpdate(saved);
 
+        log.info("✅ Order {} finished playing", orderId);
         return saved;
     }
 
     // =====================================================
-    // DEDUCT STOCK - Gọi KHI THANH TOÁN
+    // DEDUCT STOCK - Gọi InventoryService
     // =====================================================
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void deductStockForOrder(Long orderId) {
         Order order = getOrderById(orderId);
 
         if (order.isStockDeducted()) {
-            System.out.println("Stock already deducted for order " + orderId);
+            log.info("Stock already deducted for order {}", orderId);
             return;
-        }
-
-        // 🆕 Lấy user hiện tại
-        User currentUser = null;
-        try {
-            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            if (principal instanceof UserDetailsImpl) {
-                Long userId = ((UserDetailsImpl) principal).getId();
-                currentUser = userRepository.findById(userId).orElse(null);
-            }
-        } catch (Exception e) {
-            System.out.println("Không lấy được user: " + e.getMessage());
         }
 
         for (OrderItem item : order.getItems()) {
             Product product = item.getProduct();
             if (!product.isTimeBased() && item.getQuantity() > 0) {
-                int quantity = item.getQuantity();
-                int beforeQty = product.getStockQuantity();
-
-                if (beforeQty < quantity) {
-                    throw new RuntimeException(
-                            "Sản phẩm " + product.getName() + " không đủ số lượng. Còn: " + beforeQty);
-                }
-
-                product.decreaseStock(quantity);
-                productRepository.save(product);
-
-                // 🆕 Ghi log kho
-                InventoryTransaction tx = new InventoryTransaction(
-                        product, currentUser,
-                        InventoryTransaction.TransactionType.EXPORT,
-                        quantity, beforeQty, beforeQty - quantity,
+                // ✅ Gọi InventoryService - transaction riêng
+                inventoryService.exportStock(
+                        orderId,
+                        product,
+                        item.getQuantity(),
                         "Bán hàng - Order #" + orderId);
-                inventoryTransactionRepository.save(tx);
-                System.out.println("📦 Đã ghi log xuất kho: " + product.getName() + " -" + quantity);
+                log.info("✅ Exported stock: {} x {}", product.getName(), item.getQuantity());
             }
         }
 
         order.setStockDeducted(true);
         orderRepository.save(order);
-        System.out.println("✅ Đã trừ stock + ghi log kho cho order " + orderId);
+        log.info("✅ Stock deducted for order {}", orderId);
     }
+
     // =====================================================
-    // REFUND STOCK - Gọi khi hủy đơn (nếu đã trừ stock)
+    // REFUND STOCK - Gọi InventoryService
     // =====================================================
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void refundStockForOrder(Long orderId) {
         Order order = getOrderById(orderId);
 
         if (!order.isStockDeducted()) {
-            System.out.println("Stock not deducted yet for order " + orderId);
+            log.info("Stock not deducted yet for order {}", orderId);
             return;
         }
 
         for (OrderItem item : order.getItems()) {
             Product product = item.getProduct();
             if (!product.isTimeBased() && item.getQuantity() > 0) {
-                // Hoàn stock - sử dụng increaseStock()
-                product.increaseStock(item.getQuantity());
-                productRepository.save(product);
-                System.out.println("✅ Đã hoàn stock: " + product.getName() + " x" + item.getQuantity());
+                // ✅ Gọi InventoryService để hoàn stock
+                inventoryService.importStock(
+                        product.getId(),
+                        item.getQuantity(),
+                        "Hoàn hàng - Order #" + orderId);
+                log.info("✅ Refunded stock: {} x {}", product.getName(), item.getQuantity());
             }
         }
 
         order.setStockDeducted(false);
         orderRepository.save(order);
-        System.out.println("✅ Đã hoàn stock cho order " + orderId);
+        log.info("✅ Stock refunded for order {}", orderId);
     }
 
     // =====================================================
-    // CLOSE ORDER (PAYMENT) - TRỪ STOCK TẠI ĐÂY
+    // CLOSE ORDER (PAYMENT)
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public void closeOrder(Long orderId) {
         Order order = getOrderById(orderId);
 
         if (order.getStatus() == OrderStatus.PAID) {
-            System.out.println("Order " + orderId + " already paid");
+            log.info("Order {} already paid", orderId);
             return;
         }
 
-        if (order.getStatus() != OrderStatus.OPEN && order.getStatus() != OrderStatus.WAITING_PAYMENT) {
+        if (order.getStatus() != OrderStatus.OPEN &&
+                order.getStatus() != OrderStatus.WAITING_PAYMENT) {
             throw new RuntimeException(
-                    "Order không ở trạng thái đang chơi hoặc chờ thanh toán. Status hiện tại: " + order.getStatus());
+                    "Order không ở trạng thái đang chơi hoặc chờ thanh toán. Status: " + order.getStatus());
         }
 
-        // ✅ TRỪ STOCK TRƯỚC KHI THANH TOÁN
-        deductStockForOrder(orderId);
+        try {
+            // ✅ Trừ stock - transaction riêng
+            deductStockForOrder(orderId);
 
-        order.setStatus(OrderStatus.PAID);
-        orderRepository.save(order);
+            // Cập nhật order
+            order.setStatus(OrderStatus.PAID);
+            orderRepository.save(order);
 
-        BidaTable table = order.getTable();
-        table.setStatus(BidaTable.TableStatus.FREE);
-        tableRepository.save(table);
+            // Cập nhật bàn
+            BidaTable table = order.getTable();
+            table.setStatus(BidaTable.TableStatus.FREE);
+            tableRepository.save(table);
 
-        webSocketService.notifyTableStatus(table.getId(), "FREE");
-        webSocketService.notifyOrderUpdate(order);
+            // Notify
+            webSocketService.notifyTableStatus(table.getId(), "FREE");
+            webSocketService.notifyOrderUpdate(order);
+
+            log.info("✅ Order {} closed successfully", orderId);
+
+        } catch (Exception e) {
+            log.error("Error closing order {}: {}", orderId, e.getMessage());
+            throw new RuntimeException("Không thể đóng order: " + e.getMessage(), e);
+        }
     }
 
     // =====================================================
-    // CANCEL ORDER - HOÀN STOCK NẾU ĐÃ TRỪ
+    // CANCEL ORDER
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(Long orderId) {
         Order order = getOrderById(orderId);
 
@@ -444,30 +490,39 @@ public class OrderService {
             throw new RuntimeException("Order đã thanh toán, không thể hủy");
         }
 
-        // Nếu đã trừ stock thì hoàn lại
-        if (order.isStockDeducted()) {
-            refundStockForOrder(orderId);
+        try {
+            // Nếu đã trừ stock thì hoàn lại
+            if (order.isStockDeducted()) {
+                refundStockForOrder(orderId);
+            }
+
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(order);
+
+            BidaTable table = order.getTable();
+            table.setStatus(BidaTable.TableStatus.FREE);
+            tableRepository.save(table);
+
+            webSocketService.notifyTableStatus(table.getId(), "FREE");
+            log.info("✅ Order {} cancelled", orderId);
+
+        } catch (Exception e) {
+            log.error("Error cancelling order {}: {}", orderId, e.getMessage());
+            throw new RuntimeException("Không thể hủy order: " + e.getMessage(), e);
         }
-
-        order.setStatus(OrderStatus.CANCELLED);
-        orderRepository.save(order);
-
-        BidaTable table = order.getTable();
-        table.setStatus(BidaTable.TableStatus.FREE);
-        tableRepository.save(table);
-
-        webSocketService.notifyTableStatus(table.getId(), "FREE");
     }
 
     // =====================================================
     // OTHER METHODS
     // =====================================================
 
+    @Transactional(rollbackFor = Exception.class)
     public Order updateOrderStatus(Long orderId, Order.OrderStatus status) {
         Order order = getOrderById(orderId);
         order.setStatus(status);
         Order saved = orderRepository.save(order);
         webSocketService.notifyOrderUpdate(saved);
+        log.info("✅ Order {} status updated to {}", orderId, status);
         return saved;
     }
 
@@ -480,63 +535,7 @@ public class OrderService {
                 .orElse(null);
     }
 
-    public OrderItem addItemWithPrice(Long orderId, Long productId, Integer quantity, BigDecimal unitPrice) {
-        Order order = getOrderById(orderId);
-
-        if (order.getStatus() != OrderStatus.OPEN) {
-            throw new RuntimeException("Không thể thêm món khi đã kết thúc chơi");
-        }
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-
-        // 🆕 Xử lý TIME_BASED
-        if (product.isTimeBased()) {
-            if (order.getTimeBasedProduct() != null) {
-                throw new RuntimeException("Bàn đã có dịch vụ tính giờ rồi!");
-            }
-            if (quantity > 1) {
-                throw new RuntimeException("Chỉ được chọn 1 lần dịch vụ tính giờ!");
-            }
-
-            order.setTimeBasedProduct(product);
-            if (order.getStartTime() == null) {
-                order.setStartTime(LocalDateTime.now());
-            }
-
-            BigDecimal initialPrice = product.getPricePerMinute() != null ? product.getPricePerMinute()
-                    : BigDecimal.ZERO;
-            OrderItem timeItem = new OrderItem(order, product, 1, initialPrice);
-            timeItem.setSubtotal(BigDecimal.ZERO);
-            orderItemRepository.save(timeItem);
-            order.getItems().add(timeItem);
-
-            updateOrderTotal(orderId);
-            webSocketService.notifyOrderUpdate(order);
-            return timeItem;
-        }
-
-        // FOOD/DRINK - giữ nguyên logic cũ
-        OrderItem item = orderItemRepository
-                .findByOrderIdAndProductId(orderId, productId)
-                .orElse(new OrderItem(order, product, 0, unitPrice));
-
-        item.setQuantity(item.getQuantity() + quantity);
-        BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
-        item.setSubtotal(subtotal);
-        item.setUnitPrice(unitPrice);
-        orderItemRepository.save(item);
-
-        if (!order.getItems().contains(item)) {
-            order.getItems().add(item);
-        }
-
-        updateOrderTotal(orderId);
-        webSocketService.notifyOrderUpdate(order);
-        return item;
-    }
-
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void adjustPlayTime(Long orderId, Integer additionalMinutes) {
         Order order = getOrderById(orderId);
 
@@ -552,29 +551,17 @@ public class OrderService {
             throw new RuntimeException("Chưa có thời gian bắt đầu");
         }
 
-        // Lưu lại thời gian cũ để log
         LocalDateTime oldStartTime = order.getStartTime();
-
-        // Điều chỉnh thời gian bắt đầu (cộng thêm phút)
-        // additionalMinutes có thể âm (giảm thời gian) hoặc dương (tăng thời gian)
         LocalDateTime newStartTime = oldStartTime.minusMinutes(additionalMinutes);
         order.setStartTime(newStartTime);
 
-        // Log chi tiết
-        System.out.println("⏱️ Điều chỉnh thời gian cho order " + orderId);
-        System.out.println("   - Thời gian cũ: " + oldStartTime);
-        System.out.println("   - Thay đổi: " + additionalMinutes + " phút");
-        System.out.println("   - Thời gian mới: " + newStartTime);
+        log.info("⏱️ Adjusted time for order {}: {} -> {} ({} minutes)",
+                orderId, oldStartTime, newStartTime, additionalMinutes);
 
-        // Lưu order
         orderRepository.save(order);
-
-        // Cập nhật lại tổng tiền
         updateOrderTotal(orderId);
-
-        // Notify qua WebSocket
         webSocketService.notifyOrderUpdate(order);
 
-        System.out.println("✅ Đã điều chỉnh thời gian thành công!");
+        log.info("✅ Time adjusted successfully for order {}", orderId);
     }
 }

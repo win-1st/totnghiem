@@ -23,8 +23,8 @@ public class User {
     private Long id;
 
     @NotBlank
-    @Pattern(regexp = "(84|0[3|5|7|8|9])+([0-9]{8})\\b", message = "Số điện thoại không hợp lệ")
-    @Size(max = 15)
+    @Pattern(regexp = "0[3|5|7|8|9][0-9]{8}", message = "Số điện thoại không hợp lệ (phải bắt đầu bằng 0 và có 10 số)")
+    @Size(min = 10, max = 10, message = "Số điện thoại phải có đúng 10 số")
     @Column(unique = true)
     private String phone;
 

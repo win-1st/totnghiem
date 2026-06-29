@@ -9,10 +9,10 @@ import lombok.Data;
 @Data
 public class RegisterRequest {
     @NotBlank(message = "Số điện thoại không được để trống")
-    @Pattern(regexp = "(84|0[3|5|7|8|9])+([0-9]{8})\\b", message = "Số điện thoại không hợp lệ")
-    private String phone; // Thay username bằng phone
+    @Pattern(regexp = "0[3|5|7|8|9][0-9]{8}", message = "Số điện thoại không hợp lệ (phải bắt đầu bằng 0 và có 10 số)")
+    @Size(min = 10, max = 10, message = "Số điện thoại phải có đúng 10 số")
+    private String phone;
 
-    @NotBlank(message = "Email không được để trống")
     @Email(message = "Email không hợp lệ")
     private String email;
 

@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -28,6 +27,11 @@ public class ReservationService {
     @Autowired
     private UserRepository userRepository;
 
+    // ========== THÊM MỚI ==========
+    @Autowired
+    private WebSocketService webSocketService;
+
+    // ========== CONVERT TO DTO ==========
     private ReservationDTO convertToDTO(Reservation reservation) {
         ReservationDTO dto = new ReservationDTO();
         dto.setId(reservation.getId());
@@ -50,6 +54,9 @@ public class ReservationService {
         return dto;
     }
 
+    // ========== QUERY METHODS ==========
+
+    // Lấy đặt bàn theo customerId
     public List<ReservationDTO> getReservationsByCustomerId(Long customerId) {
         List<Reservation> reservations = reservationRepository
                 .findByCustomerIdOrderByReservationDateDescReservationTimeDesc(customerId);
@@ -118,20 +125,35 @@ public class ReservationService {
         return true;
     }
 
+    // ========== CRUD METHODS ==========
+
     // Tạo đặt bàn mới
     @Transactional
     public ReservationDTO createReservation(ReservationDTO dto, Long customerId) {
+        // Kiểm tra tableId có được gửi lên không
+        if (dto.getTableId() == null) {
+            // Nếu không chọn bàn, tự động tìm bàn trống
+            BidaTable availableTable = findAvailableTable(dto.getReservationDate(), dto.getReservationTime(),
+                    dto.getNumberOfGuests());
+            if (availableTable == null) {
+                throw new RuntimeException("Không có bàn trống vào khung giờ này. Vui lòng chọn giờ khác.");
+            }
+            dto.setTableId(availableTable.getId());
+        }
+
         BidaTable table = bidaTableRepository.findById(dto.getTableId())
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn"));
 
         // Kiểm tra bàn có trống không
-        int duration = 2; // Mặc định 2 giờ
+        int duration = 2;
         if (dto.getEndTime() != null) {
             duration = dto.getEndTime().getHour() - dto.getReservationTime().getHour();
+            if (duration <= 0)
+                duration = 2;
         }
 
         if (!isTableAvailable(dto.getTableId(), dto.getReservationDate(), dto.getReservationTime(), duration)) {
-            throw new RuntimeException("Bàn đã được đặt vào khung giờ này");
+            throw new RuntimeException("Bàn đã được đặt vào khung giờ này. Vui lòng chọn bàn khác hoặc đổi giờ.");
         }
 
         Reservation reservation = new Reservation();
@@ -142,7 +164,14 @@ public class ReservationService {
         reservation.setNumberOfGuests(dto.getNumberOfGuests() != null ? dto.getNumberOfGuests() : table.getCapacity());
         reservation.setReservationDate(dto.getReservationDate());
         reservation.setReservationTime(dto.getReservationTime());
-        reservation.setEndTime(dto.getEndTime());
+
+        // Tính endTime mặc định (2 tiếng sau)
+        if (dto.getEndTime() == null) {
+            reservation.setEndTime(dto.getReservationTime().plusHours(2));
+        } else {
+            reservation.setEndTime(dto.getEndTime());
+        }
+
         reservation.setNotes(dto.getNotes());
         reservation.setStatus(Reservation.ReservationStatus.PENDING);
         reservation
@@ -152,10 +181,44 @@ public class ReservationService {
         if (customerId != null) {
             User customer = userRepository.findById(customerId).orElse(null);
             reservation.setCustomer(customer);
+            // Nếu có customer, cập nhật thông tin từ customer
+            if (customer != null) {
+                if (dto.getCustomerName() == null || dto.getCustomerName().isEmpty()) {
+                    reservation.setCustomerName(
+                            customer.getFullName() != null ? customer.getFullName() : customer.getPhone());
+                }
+                if (dto.getCustomerPhone() == null || dto.getCustomerPhone().isEmpty()) {
+                    reservation.setCustomerPhone(customer.getPhone());
+                }
+                if (dto.getCustomerEmail() == null || dto.getCustomerEmail().isEmpty()) {
+                    reservation.setCustomerEmail(customer.getEmail());
+                }
+            }
         }
 
         Reservation saved = reservationRepository.save(reservation);
+
+        // ========== WEBSOCKET NOTIFICATION ==========
+        sendTableStatusNotification(saved, "RESERVED");
+
         return convertToDTO(saved);
+    }
+
+    // Tìm bàn trống tự động
+    private BidaTable findAvailableTable(LocalDate date, LocalTime time, Integer numberOfGuests) {
+        List<BidaTable> allTables = bidaTableRepository.findAll();
+
+        for (BidaTable table : allTables) {
+            // Kiểm tra sức chứa
+            if (numberOfGuests != null && table.getCapacity() < numberOfGuests) {
+                continue;
+            }
+            // Kiểm tra bàn có trống không
+            if (isTableAvailable(table.getId(), date, time, 2)) {
+                return table;
+            }
+        }
+        return null;
     }
 
     // Cập nhật đặt bàn
@@ -189,7 +252,12 @@ public class ReservationService {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
         reservation.confirm();
-        return convertToDTO(reservationRepository.save(reservation));
+        Reservation saved = reservationRepository.save(reservation);
+
+        // ========== WEBSOCKET NOTIFICATION ==========
+        sendTableStatusNotification(saved, "RESERVED");
+
+        return convertToDTO(saved);
     }
 
     // Hủy đặt bàn
@@ -198,7 +266,12 @@ public class ReservationService {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
         reservation.cancel(reason);
-        return convertToDTO(reservationRepository.save(reservation));
+        Reservation saved = reservationRepository.save(reservation);
+
+        // ========== WEBSOCKET NOTIFICATION ==========
+        sendTableStatusNotification(saved, "FREE");
+
+        return convertToDTO(saved);
     }
 
     // Check-in
@@ -207,7 +280,12 @@ public class ReservationService {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
         reservation.checkIn();
-        return convertToDTO(reservationRepository.save(reservation));
+        Reservation saved = reservationRepository.save(reservation);
+
+        // ========== WEBSOCKET NOTIFICATION ==========
+        sendTableStatusNotification(saved, "OCCUPIED");
+
+        return convertToDTO(saved);
     }
 
     // Xóa đặt bàn
@@ -215,6 +293,31 @@ public class ReservationService {
     public void deleteReservation(Long id) {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
+
+        Long tableId = reservation.getTable().getId();
         reservationRepository.delete(reservation);
+
+        // ========== WEBSOCKET NOTIFICATION ==========
+        try {
+            webSocketService.notifyTableStatus(tableId, "FREE");
+            System.out.println("✅ WebSocket sent: Table " + tableId + " status -> FREE (deleted)");
+        } catch (Exception e) {
+            System.err.println("⚠️ WebSocket notification failed: " + e.getMessage());
+        }
+    }
+
+    // ========== PRIVATE HELPER: GỬI WEBSOCKET NOTIFICATION ==========
+    private void sendTableStatusNotification(Reservation reservation, String status) {
+        try {
+            Long tableId = reservation.getTable().getId();
+            String tableNumber = reservation.getTable().getNumber() != null
+                    ? reservation.getTable().getNumber().toString()
+                    : "?";
+
+            webSocketService.notifyTableStatus(tableId, status);
+            System.out.println("✅ WebSocket sent: Table " + tableNumber + " (ID:" + tableId + ") status -> " + status);
+        } catch (Exception e) {
+            System.err.println("⚠️ WebSocket notification failed: " + e.getMessage());
+        }
     }
 }

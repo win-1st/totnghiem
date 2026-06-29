@@ -25,7 +25,7 @@ public class BidaTableController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getAllTables() {
         // SỬA: Dùng DTO thay vì entity
         List<TableDTO> tables = tableService.getAllTableDTO();
@@ -89,7 +89,7 @@ public class BidaTableController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getTableById(@PathVariable Long id) {
         try {
             TableDTO table = tableService.getTableDTOById(id);

@@ -12,7 +12,6 @@ public class CustomerPointDTO {
     private String phone;
     private String customerName;
     private Integer totalPoints;
-    private Integer totalHoursPlayed;
     private String createdAt;
     private String updatedAt;
 

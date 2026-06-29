@@ -8,19 +8,17 @@ import lombok.Setter;
 @Setter
 public class JwtResponse {
     private Long id;
-    private String username;
+    private String phone;
     private String email;
     private List<String> roles;
     private String tokenType = "Bearer";
-    private String accessToken;
+    private String token;
     private String fullName;
 
-    // Constructor đầy đủ
-    public JwtResponse(String accessToken, Long id, String username, String fullName, String email,
-            List<String> roles) {
-        this.accessToken = accessToken;
+    public JwtResponse(String token, Long id, String phone, String fullName, String email, List<String> roles) {
+        this.token = token;
         this.id = id;
-        this.username = username;
+        this.phone = phone;
         this.fullName = fullName;
         this.email = email;
         this.roles = roles;

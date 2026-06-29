@@ -2,17 +2,14 @@ package thang.bida.controllers;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import thang.bida.model.InventoryTransaction;
+import thang.bida.dto.InventoryTransactionDTO;
 import thang.bida.model.Product;
-import thang.bida.model.User;
-import thang.bida.repository.InventoryTransactionRepository;
 import thang.bida.repository.ProductRepository;
-import thang.bida.repository.UserRepository;
-import thang.bida.services.UserDetailsImpl;
+import thang.bida.services.InventoryService;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -22,62 +19,157 @@ import java.util.Map;
 @PreAuthorize("hasRole('ADMIN')")
 public class InventoryController {
 
-    private final InventoryTransactionRepository inventoryTransactionRepository;
+    private final InventoryService inventoryService;
     private final ProductRepository productRepository;
-    private final UserRepository userRepository;
 
-    public InventoryController(InventoryTransactionRepository inventoryTransactionRepository,
-            ProductRepository productRepository,
-            UserRepository userRepository) {
-        this.inventoryTransactionRepository = inventoryTransactionRepository;
+    public InventoryController(InventoryService inventoryService, ProductRepository productRepository) {
+        this.inventoryService = inventoryService;
         this.productRepository = productRepository;
-        this.userRepository = userRepository;
     }
 
+    // ✅ Lấy tất cả transactions
     @GetMapping
     public ResponseEntity<?> getAll() {
-        List<InventoryTransaction> list = inventoryTransactionRepository.findAll();
-        return ResponseEntity.ok(Map.of("success", true, "data", list));
+        List<InventoryTransactionDTO> transactions = inventoryService.getAllTransactions();
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", transactions,
+                "count", transactions.size()));
     }
 
+    // ✅ Lấy transactions theo product
     @GetMapping("/product/{productId}")
     public ResponseEntity<?> getByProduct(@PathVariable Long productId) {
-        List<InventoryTransaction> list = inventoryTransactionRepository.findByProductId(productId);
-        return ResponseEntity.ok(Map.of("success", true, "data", list));
+        List<InventoryTransactionDTO> transactions = inventoryService
+                .getTransactionsByProduct(productId);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", transactions,
+                "count", transactions.size()));
     }
 
+    // ✅ Nhập kho
     @PostMapping("/import")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> importStock(@RequestBody Map<String, Object> request) {
-        Long productId = Long.valueOf(request.get("productId").toString());
-        Integer quantity = Integer.valueOf(request.get("quantity").toString());
-        String note = (String) request.getOrDefault("note", "Nhập kho");
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
-
-        // Lấy user hiện tại
-        User currentUser = null;
         try {
-            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            if (principal instanceof UserDetailsImpl) {
-                currentUser = userRepository.findById(((UserDetailsImpl) principal).getId()).orElse(null);
-            }
+            Long productId = Long.valueOf(request.get("productId").toString());
+            Integer quantity = Integer.valueOf(request.get("quantity").toString());
+            String note = (String) request.getOrDefault("note", "Nhập kho");
+
+            InventoryTransactionDTO tx = inventoryService.importStock(productId, quantity, note);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Đã nhập " + quantity + " sản phẩm thành công",
+                    "data", tx));
         } catch (Exception e) {
-            System.out.println("Không lấy được user: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()));
         }
+    }
 
-        int beforeQty = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
-        product.setStockQuantity(beforeQty + quantity);
-        productRepository.save(product);
+    // ✅ Xuất kho
+    @PostMapping("/export")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> exportStock(@RequestBody Map<String, Object> request) {
+        try {
+            Long productId = Long.valueOf(request.get("productId").toString());
+            Integer quantity = Integer.valueOf(request.get("quantity").toString());
+            String note = (String) request.getOrDefault("note", "Xuất kho");
 
-        InventoryTransaction tx = new InventoryTransaction(
-                product, currentUser, InventoryTransaction.TransactionType.IMPORT,
-                quantity, beforeQty, beforeQty + quantity, note);
-        inventoryTransactionRepository.save(tx);
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
 
-        return ResponseEntity.ok(Map.of("success", true,
-                "message", "Đã nhập " + quantity + " " + product.getName(),
-                "data", tx));
+            InventoryTransactionDTO tx = inventoryService.exportStock(null, product, quantity, note);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Đã xuất " + quantity + " sản phẩm thành công",
+                    "data", tx));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()));
+        }
+    }
+
+    // ✅ Điều chỉnh tồn kho
+    @PostMapping("/adjust")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> adjustStock(@RequestBody Map<String, Object> request) {
+        try {
+            Long productId = Long.valueOf(request.get("productId").toString());
+            Integer quantity = Integer.valueOf(request.get("quantity").toString());
+            String note = (String) request.getOrDefault("note", "Điều chỉnh tồn kho");
+
+            InventoryTransactionDTO tx = inventoryService.adjustStock(productId, quantity, note);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Đã điều chỉnh tồn kho thành công",
+                    "data", tx));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()));
+        }
+    }
+
+    // ✅ Lấy transactions theo user
+    @GetMapping("/user/{userId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getByUser(@PathVariable Long userId) {
+        List<InventoryTransactionDTO> transactions = inventoryService
+                .getTransactionsByUser(userId);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", transactions,
+                "count", transactions.size()));
+    }
+
+    // ✅ Lấy transactions theo khoảng thời gian
+    @GetMapping("/date-range")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getByDateRange(
+            @RequestParam String startDate,
+            @RequestParam String endDate) {
+        try {
+            LocalDateTime start = LocalDateTime.parse(startDate);
+            LocalDateTime end = LocalDateTime.parse(endDate);
+
+            List<InventoryTransactionDTO> transactions = inventoryService
+                    .getTransactionsByDateRange(start, end);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data", transactions,
+                    "count", transactions.size()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Định dạng ngày không hợp lệ. Dùng ISO-8601: yyyy-MM-ddTHH:mm:ss"));
+        }
+    }
+
+    // ✅ Thống kê tồn kho - Gọi Service
+    @GetMapping("/stats/product/{productId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getProductStats(@PathVariable Long productId) {
+        try {
+            Map<String, Object> stats = inventoryService.getProductStats(productId);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data", stats));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()));
+        }
     }
 }

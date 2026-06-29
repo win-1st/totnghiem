@@ -18,6 +18,7 @@ public class ChatController {
     }
 
     @PostMapping("/ask")
+    @org.springframework.security.access.prepost.PreAuthorize("permitAll()")
     public ChatResponse ask(@RequestBody ChatRequest request) {
         String reply = chatService.reply(
                 request.getMessage(),

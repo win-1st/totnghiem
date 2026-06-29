@@ -27,4 +27,5 @@ public class ReservationDTO {
     private Boolean isDepositPaid;
     private String createdAt;
     private String updatedAt;
+    private String tableType;
 }

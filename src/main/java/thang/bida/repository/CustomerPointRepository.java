@@ -29,8 +29,4 @@ public interface CustomerPointRepository extends JpaRepository<CustomerPoint, Lo
     @Query("UPDATE CustomerPoint c SET c.totalPoints = c.totalPoints - :points WHERE c.phone = :phone AND c.totalPoints >= :points")
     int redeemPoints(@Param("phone") String phone, @Param("points") int points);
 
-    @Modifying
-    @Transactional
-    @Query("UPDATE CustomerPoint c SET c.totalHoursPlayed = c.totalHoursPlayed + :hours WHERE c.phone = :phone")
-    int addHoursPlayed(@Param("phone") String phone, @Param("hours") int hours);
 }

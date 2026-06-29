@@ -15,32 +15,33 @@ import thang.bida.model.User;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    // THÊM method findByPhone
+    // Tìm theo phone
     Optional<User> findByPhone(String phone);
 
-    // Giữ lại findByUsername cũ nếu cần (có thể bỏ)
-    Optional<User> findByUsername(String username);
-
+    // Tìm theo email
     Optional<User> findByEmail(String email);
 
-    Boolean existsByUsername(String username);
+    // Kiểm tra tồn tại
+    Boolean existsByPhone(String phone);
 
     Boolean existsByEmail(String email);
 
-    // THÊM method existsByPhone
-    Boolean existsByPhone(String phone);
-
+    // Tìm user theo role
     List<User> findByRole(Role role);
 
     @Query("SELECT u FROM User u WHERE u.role = :role")
     List<User> findUsersByRole(@Param("role") Role role);
 
+    // Tìm user active theo role
     List<User> findByIsActiveTrueAndRole(Role role);
 
+    // Tìm user theo tên (like)
     List<User> findByFullNameContaining(String name);
 
+    // Tìm user mới nhất
     List<User> findTop5ByOrderByCreatedAtDesc();
 
+    // Thống kê
     long countByRole(Role role);
 
     long countByCreatedAtAfter(LocalDateTime time);
@@ -49,9 +50,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
 
+    // Kiểm tra email tồn tại với user khác (dùng cho update)
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.email = :email AND u.id != :userId")
     Boolean existsByEmailAndIdNot(@Param("email") String email, @Param("userId") Long userId);
 
-    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.username = :username AND u.id != :userId")
-    Boolean existsByUsernameAndIdNot(@Param("username") String username, @Param("userId") Long userId);
+    // Kiểm tra phone tồn tại với user khác (dùng cho update)
+    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.phone = :phone AND u.id != :userId")
+    Boolean existsByPhoneAndIdNot(@Param("phone") String phone, @Param("userId") Long userId);
 }

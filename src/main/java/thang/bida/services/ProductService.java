@@ -216,4 +216,42 @@ public class ProductService {
         product.setActive(active);
         return productRepository.save(product);
     }
+
+    public Product updateRedeemConfig(Long id, Boolean isRedeemable, Integer pointsRequired) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm với ID: " + id));
+
+        // Không cho phép sản phẩm tính giờ đổi điểm
+        if (product.isTimeBased() && isRedeemable != null && isRedeemable) {
+            throw new RuntimeException("Sản phẩm tính giờ không thể đổi bằng điểm!");
+        }
+
+        // Cập nhật trạng thái cho phép đổi điểm
+        if (isRedeemable != null) {
+            product.setIsRedeemable(isRedeemable);
+        }
+
+        // Cập nhật số điểm cần để đổi
+        if (pointsRequired != null) {
+            if (pointsRequired < 0) {
+                throw new RuntimeException("Số điểm không được âm!");
+            }
+            product.setPointsRequired(pointsRequired);
+        }
+
+        Product saved = productRepository.save(product);
+
+        System.out.println("✅ Đã cập nhật cấu hình đổi điểm cho sản phẩm: " + saved.getName());
+        System.out.println("   - isRedeemable: " + saved.getIsRedeemable());
+        System.out.println("   - pointsRequired: " + saved.getPointsRequired());
+
+        return saved;
+    }
+
+    /**
+     * Lấy danh sách sản phẩm có thể đổi điểm
+     */
+    public List<Product> getRedeemableProducts() {
+        return productRepository.findByIsRedeemableTrueAndActiveTrue();
+    }
 }

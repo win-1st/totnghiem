@@ -273,4 +273,92 @@ public class ProductController {
 
         return ResponseEntity.ok(response);
     }
+
+    // ========== API MỚI: CẤU HÌNH ĐỔI ĐIỂM ==========
+
+    /**
+     * API: Cấu hình đổi điểm cho sản phẩm
+     * PATCH /api/products/{id}/redeem-config
+     * Body: { "isRedeemable": true, "pointsRequired": 100 }
+     */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PatchMapping("/{id}/redeem-config")
+    public ResponseEntity<?> updateRedeemConfig(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> request) {
+        try {
+            Boolean isRedeemable = null;
+            Integer pointsRequired = null;
+
+            if (request.containsKey("isRedeemable")) {
+                isRedeemable = (Boolean) request.get("isRedeemable");
+            }
+            if (request.containsKey("pointsRequired")) {
+                pointsRequired = (Integer) request.get("pointsRequired");
+            }
+
+            // ✅ Gọi ProductService thay vì gọi trực tiếp Repository
+            Product product = productService.updateRedeemConfig(id, isRedeemable, pointsRequired);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("id", product.getId());
+            data.put("name", product.getName());
+            data.put("isRedeemable", product.getIsRedeemable());
+            data.put("pointsRequired", product.getPointsRequired());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Cấu hình đổi điểm thành công");
+            response.put("data", data);
+
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    /**
+     * API: Lấy danh sách sản phẩm có thể đổi điểm
+     * GET /api/products/redeemable
+     */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','CUSTOMER')")
+    @GetMapping("/redeemable")
+    public ResponseEntity<?> getRedeemableProducts() {
+        try {
+            // ✅ Gọi ProductService thay vì gọi trực tiếp Repository
+            List<Product> products = productService.getRedeemableProducts();
+
+            List<Map<String, Object>> formattedProducts = products.stream()
+                    .map(p -> {
+                        Map<String, Object> item = new HashMap<>();
+                        item.put("id", p.getId());
+                        item.put("name", p.getName());
+                        item.put("imageUrl", p.getImageUrl());
+                        item.put("pointsRequired", p.getPointsRequired());
+                        item.put("stockQuantity", p.getStockQuantity());
+                        item.put("unit", p.getUnit());
+                        item.put("price", p.getPrice());
+                        item.put("salePrice", p.getSalePrice());
+                        item.put("categoryName", p.getCategory() != null ? p.getCategory().getName() : null);
+                        return item;
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Lấy danh sách sản phẩm đổi điểm thành công");
+            response.put("data", formattedProducts);
+            response.put("count", formattedProducts.size());
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Lỗi: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
 }

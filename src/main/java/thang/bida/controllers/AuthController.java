@@ -75,7 +75,9 @@ public class AuthController {
                     .body(Map.of("message", "Số điện thoại đã được đăng ký!"));
         }
 
-        if (userService.existsByEmail(signUpRequest.getEmail())) {
+        // Chỉ kiểm tra email nếu email được cung cấp
+        if (signUpRequest.getEmail() != null && !signUpRequest.getEmail().isEmpty()
+                && userService.existsByEmail(signUpRequest.getEmail())) {
             return ResponseEntity
                     .badRequest()
                     .body(Map.of("message", "Email đã được sử dụng!"));
@@ -87,6 +89,9 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
+        System.out.println("=== LOGIN ATTEMPT ===");
+        System.out.println("Phone: " + loginRequest.getPhone());
+
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         loginRequest.getPhone(),
@@ -95,6 +100,7 @@ public class AuthController {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         String jwt = jwtUtils.generateJwtToken(authentication);
+        System.out.println("JWT generated: " + (jwt != null ? "Yes" : "No"));
 
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
 
@@ -102,13 +108,22 @@ public class AuthController {
                 .map(item -> item.getAuthority().replace("ROLE_", ""))
                 .collect(Collectors.toList());
 
-        return ResponseEntity.ok(new JwtResponse(
+        System.out.println("User ID: " + userDetails.getId());
+        System.out.println("User Phone: " + userDetails.getUsername());
+        System.out.println("User FullName: " + userDetails.getFullName());
+        System.out.println("Roles: " + roles);
+
+        JwtResponse response = new JwtResponse(
                 jwt,
                 userDetails.getId(),
-                userDetails.getUsername(),
+                userDetails.getUsername(), // Đây là phone
                 userDetails.getFullName(),
                 userDetails.getEmail(),
-                roles));
+                roles);
+
+        System.out.println("Response created successfully");
+
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/me")
@@ -249,7 +264,6 @@ public class AuthController {
             User user = userRepository.findById(userDetails.getId())
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // Cập nhật thông tin
             if (profileRequest.containsKey("fullName")) {
                 user.setFullName(profileRequest.get("fullName"));
             }
@@ -262,15 +276,7 @@ public class AuthController {
                 }
                 user.setEmail(newEmail);
             }
-            if (profileRequest.containsKey("phone")) {
-                String newPhone = profileRequest.get("phone");
-                if (!newPhone.equals(user.getPhone()) && userService.existsByPhone(newPhone)) {
-                    return ResponseEntity
-                            .badRequest()
-                            .body(Map.of("message", "Số điện thoại đã được sử dụng bởi tài khoản khác"));
-                }
-                user.setPhone(newPhone);
-            }
+
             if (profileRequest.containsKey("address")) {
                 user.setAddress(profileRequest.get("address"));
             }
@@ -282,7 +288,7 @@ public class AuthController {
             response.put("message", "Cập nhật thông tin thành công");
             response.put("data", Map.of(
                     "id", user.getId(),
-                    "phone", user.getPhone(),
+                    "phone", user.getPhone(), // Vẫn trả về phone nhưng không cho sửa
                     "fullName", user.getFullName(),
                     "email", user.getEmail(),
                     "address", user.getAddress(),

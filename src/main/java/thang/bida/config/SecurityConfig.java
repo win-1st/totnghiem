@@ -61,12 +61,13 @@ public class SecurityConfig {
                                                 .requestMatchers("/api/payos/webhook").permitAll()
                                                 .requestMatchers("/api/payos/check-status/**").permitAll()
 
+                                                // ✅ THÊM: Cho phép chat public (không cần đăng nhập)
+                                                .requestMatchers("/api/chat/**").permitAll()
+
                                                 // OPTIONS cho tất cả
                                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                                                 // ========== AUTHENTICATED ==========
-                                                .requestMatchers("/api/chat/**").authenticated()
-
                                                 // ✅ THÊM: API lấy lịch sử đặt bàn của customer
                                                 .requestMatchers("/api/reservations/my-reservations").authenticated()
                                                 .requestMatchers(HttpMethod.GET, "/api/reservations/phone/**")
@@ -82,7 +83,7 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.GET, "/api/product-types/**")
                                                 .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
                                                 .requestMatchers(HttpMethod.GET, "/api/tables/**")
-                                                .hasAnyRole("ADMIN", "STAFF")
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
 
                                                 .requestMatchers(HttpMethod.GET, "/api/promotions/active")
                                                 .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
@@ -97,7 +98,17 @@ public class SecurityConfig {
 
                                                 .requestMatchers(HttpMethod.GET, "/api/time-based/**")
                                                 .hasAnyRole("ADMIN", "STAFF")
-                                                .requestMatchers("/api/customer-points/**").hasAnyRole("ADMIN", "STAFF")
+
+                                                // ✅ SỬA: Cho phép CUSTOMER xem điểm của mình
+                                                .requestMatchers(HttpMethod.GET, "/api/customer-points/me")
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
+                                                .requestMatchers(HttpMethod.GET, "/api/customer-points/transactions")
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
+
+                                                // Các API còn lại chỉ ADMIN và STAFF
+                                                .requestMatchers("/api/customer-points/**")
+                                                .hasAnyRole("ADMIN", "STAFF")
+
                                                 .requestMatchers("/api/auth/me").authenticated()
 
                                                 // ========== STAFF + ADMIN ==========
@@ -166,7 +177,7 @@ public class SecurityConfig {
                 configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
                 configuration.setAllowedHeaders(Arrays.asList("*"));
                 configuration.setExposedHeaders(Arrays.asList("Authorization"));
-                configuration.setAllowCredentials(false);
+                configuration.setAllowCredentials(true);
                 configuration.setMaxAge(3600L);
 
                 UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

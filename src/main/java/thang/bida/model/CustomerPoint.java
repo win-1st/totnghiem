@@ -29,9 +29,6 @@ public class CustomerPoint {
     @Column(name = "total_points")
     private Integer totalPoints = 0;
 
-    @Column(name = "total_hours_played")
-    private Integer totalHoursPlayed = 0;
-
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -44,8 +41,6 @@ public class CustomerPoint {
         updatedAt = LocalDateTime.now();
         if (totalPoints == null)
             totalPoints = 0;
-        if (totalHoursPlayed == null)
-            totalHoursPlayed = 0;
     }
 
     @PreUpdate
@@ -53,32 +48,20 @@ public class CustomerPoint {
         updatedAt = LocalDateTime.now();
     }
 
-    // Constructor 1: Chỉ có SĐT và tên
+    // Constructor 1: SĐT và tên
     public CustomerPoint(String phone, String customerName) {
         this.phone = phone;
         this.customerName = customerName;
         this.totalPoints = 0;
-        this.totalHoursPlayed = 0;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
 
-    // Constructor 2: Có SĐT, tên và điểm ban đầu (QUAN TRỌNG - đang thiếu)
+    // Constructor 2: SĐT, tên và điểm ban đầu
     public CustomerPoint(String phone, String customerName, Integer totalPoints) {
         this.phone = phone;
         this.customerName = customerName;
         this.totalPoints = totalPoints != null ? totalPoints : 0;
-        this.totalHoursPlayed = 0;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
-    }
-
-    // Constructor 3: Đầy đủ
-    public CustomerPoint(String phone, String customerName, Integer totalPoints, Integer totalHoursPlayed) {
-        this.phone = phone;
-        this.customerName = customerName;
-        this.totalPoints = totalPoints != null ? totalPoints : 0;
-        this.totalHoursPlayed = totalHoursPlayed != null ? totalHoursPlayed : 0;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
@@ -97,11 +80,5 @@ public class CustomerPoint {
             return true;
         }
         return false;
-    }
-
-    // Phương thức cộng giờ chơi
-    public void addHoursPlayed(int hours) {
-        this.totalHoursPlayed = (this.totalHoursPlayed == null ? 0 : this.totalHoursPlayed) + hours;
-        this.updatedAt = LocalDateTime.now();
     }
 }

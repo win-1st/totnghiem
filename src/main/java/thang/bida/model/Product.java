@@ -101,6 +101,33 @@ public class Product {
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<InventoryTransaction> inventoryTransactions = new ArrayList<>();
 
+    @Column(name = "points_required")
+    private Integer pointsRequired = 0; // Số điểm cần để đổi sản phẩm này
+
+    @Column(name = "is_redeemable")
+    private Boolean isRedeemable = false; // Cho phép đổi bằng điểm không
+
+    // Helper methods
+    public boolean canRedeemWithPoints() {
+        return isRedeemable != null && isRedeemable && pointsRequired != null && pointsRequired > 0;
+    }
+
+    public Integer getPointsRequired() {
+        return pointsRequired;
+    }
+
+    public void setPointsRequired(Integer pointsRequired) {
+        this.pointsRequired = pointsRequired;
+    }
+
+    public Boolean getIsRedeemable() {
+        return isRedeemable;
+    }
+
+    public void setIsRedeemable(Boolean isRedeemable) {
+        this.isRedeemable = isRedeemable;
+    }
+
     // Constructor với các field cần thiết
     public Product(String name, BigDecimal price, Category category) {
         this.name = name;
