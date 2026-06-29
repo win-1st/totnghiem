@@ -42,7 +42,7 @@ public class ReservationController {
 
     // Lấy lịch sử đặt bàn của khách hàng hiện tại
     @GetMapping("/my-reservations")
-    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN', 'STAFF')")
     public ResponseEntity<?> getMyReservations() {
         try {
             Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -59,7 +59,7 @@ public class ReservationController {
 
     // Lấy lịch sử đặt bàn theo customerId (cho admin/staff)
     @GetMapping("/customer/{customerId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> getReservationsByCustomerId(@PathVariable Long customerId) {
         try {
             List<ReservationDTO> reservations = reservationService.getReservationsByCustomerId(customerId);
@@ -71,7 +71,7 @@ public class ReservationController {
 
     // Lấy tất cả đặt bàn
     @GetMapping("/all")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> getAllReservations() {
         List<ReservationDTO> reservations = reservationService.getAllReservations();
         return successResponse("Lấy danh sách đặt bàn thành công", reservations);
@@ -91,7 +91,7 @@ public class ReservationController {
 
     // Lấy đặt bàn theo số điện thoại
     @GetMapping("/phone/{phone}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> getReservationsByPhone(@PathVariable String phone) {
         List<ReservationDTO> reservations = reservationService.getReservationsByPhone(phone);
         return successResponse("Lấy danh sách đặt bàn thành công", reservations);
@@ -99,7 +99,7 @@ public class ReservationController {
 
     // Lấy đặt bàn theo ngày
     @GetMapping("/date/{date}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> getReservationsByDate(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         List<ReservationDTO> reservations = reservationService.getReservationsByDate(date);
@@ -108,7 +108,7 @@ public class ReservationController {
 
     // Lấy đặt bàn hôm nay
     @GetMapping("/today")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> getTodaysReservations() {
         List<ReservationDTO> reservations = reservationService.getTodaysReservations();
         return successResponse("Lấy danh sách đặt bàn hôm nay thành công", reservations);
@@ -116,7 +116,7 @@ public class ReservationController {
 
     // Lấy đặt bàn sắp tới
     @GetMapping("/upcoming")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> getUpcomingReservations() {
         List<ReservationDTO> reservations = reservationService.getUpcomingReservations();
         return successResponse("Lấy danh sách đặt bàn sắp tới thành công", reservations);
@@ -164,7 +164,7 @@ public class ReservationController {
 
     // Cập nhật đặt bàn
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> updateReservation(@PathVariable Long id, @RequestBody ReservationDTO dto) {
         try {
             ReservationDTO reservation = reservationService.updateReservation(id, dto);
@@ -176,7 +176,7 @@ public class ReservationController {
 
     // Xác nhận đặt bàn
     @PatchMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> confirmReservation(@PathVariable Long id) {
         try {
             ReservationDTO reservation = reservationService.confirmReservation(id);
@@ -202,7 +202,7 @@ public class ReservationController {
 
     // Check-in
     @PatchMapping("/{id}/checkin")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     public ResponseEntity<?> checkIn(@PathVariable Long id) {
         try {
             ReservationDTO reservation = reservationService.checkIn(id);
@@ -214,7 +214,7 @@ public class ReservationController {
 
     // Xóa đặt bàn
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> deleteReservation(@PathVariable Long id) {
         try {
             reservationService.deleteReservation(id);

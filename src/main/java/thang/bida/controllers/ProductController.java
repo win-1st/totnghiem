@@ -25,7 +25,7 @@ public class ProductController {
     private ProductService productService;
 
     // === TẠO SẢN PHẨM MỚI ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     @PostMapping
     public ResponseEntity<?> createProductForm(@ModelAttribute ProductRequest request) {
         try {
@@ -155,7 +155,7 @@ public class ProductController {
     }
 
     // === CẬP NHẬT SẢN PHẨM ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     @PutMapping("/{id}")
     public ResponseEntity<?> updateProductForm(
             @PathVariable Long id,
@@ -216,7 +216,7 @@ public class ProductController {
     }
 
     // === THAY ĐỔI TRẠNG THÁI SẢN PHẨM ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     @PatchMapping("/{id}/status")
     public ResponseEntity<?> toggleProductStatus(
             @PathVariable Long id,
@@ -239,7 +239,7 @@ public class ProductController {
     }
 
     // === CẬP NHẬT SỐ LƯỢNG TỒN KHO ===
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     @PatchMapping("/{id}/stock")
     public ResponseEntity<?> updateStockQuantity(
             @PathVariable Long id,
@@ -281,7 +281,7 @@ public class ProductController {
      * PATCH /api/products/{id}/redeem-config
      * Body: { "isRedeemable": true, "pointsRequired": 100 }
      */
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     @PatchMapping("/{id}/redeem-config")
     public ResponseEntity<?> updateRedeemConfig(
             @PathVariable Long id,

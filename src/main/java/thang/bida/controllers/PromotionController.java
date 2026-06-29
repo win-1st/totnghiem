@@ -71,7 +71,7 @@ public class PromotionController {
 
     // Lấy chi tiết khuyến mãi theo ID
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> getPromotionById(@PathVariable Long id) {
         try {
             Promotion promotion = promotionService.getPromotionById(id);
@@ -92,7 +92,7 @@ public class PromotionController {
 
     // Tìm kiếm khuyến mãi theo tên
     @GetMapping("/search")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> searchPromotions(@RequestParam String keyword) {
         List<Promotion> promotions = promotionService.searchPromotionsByName(keyword);
 
@@ -221,7 +221,7 @@ public class PromotionController {
 
     // Lấy danh sách sản phẩm chưa trong khuyến mãi
     @GetMapping("/{promotionId}/available-products")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<?> getProductsNotInPromotion(@PathVariable Long promotionId) {
         try {
             List<Product> products = promotionService.getProductsNotInPromotion(promotionId);
