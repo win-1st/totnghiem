@@ -31,6 +31,7 @@ public class PromotionService {
     }
 
     // === CRUD OPERATIONS ===
+
     public Promotion createPromotion(Promotion promotion) {
         // Validate dates
         if (promotion.getStartDate().isAfter(promotion.getEndDate())) {
@@ -60,7 +61,7 @@ public class PromotionService {
         }
 
         promotion.setName(promotionDetails.getName());
-        promotion.setDescription(promotionDetails.getDescription()); // ✅ THÊM DÒNG NÀY
+        promotion.setDescription(promotionDetails.getDescription());
         promotion.setDiscountPercentage(promotionDetails.getDiscountPercentage());
         promotion.setDiscountAmount(promotionDetails.getDiscountAmount());
         promotion.setStartDate(promotionDetails.getStartDate());
@@ -95,12 +96,32 @@ public class PromotionService {
         return promotionRepository.findAll();
     }
 
+    // ===== FIX: Lấy khuyến mãi đang hoạt động và còn hiệu lực =====
     public List<Promotion> getActivePromotions() {
-        return promotionRepository.findByIsActiveTrue();
+        LocalDate today = LocalDate.now();
+
+        // Cách 1: Dùng stream filter (nếu repository chưa có method)
+        return promotionRepository.findAll().stream()
+                .filter(p -> p.getIsActive() != null && p.getIsActive()) // isActive = true
+                .filter(p -> p.getStartDate() == null || !p.getStartDate().isAfter(today)) // startDate <= today
+                .filter(p -> p.getEndDate() == null || !p.getEndDate().isBefore(today)) // endDate >= today
+                .collect(Collectors.toList());
     }
 
+    // ===== Cách 2: Dùng repository method (khuyến khích dùng) =====
+    // public List<Promotion> getActivePromotions() {
+    // return promotionRepository.findActiveAndValidPromotions(LocalDate.now());
+    // }
+
+    // ===== Lấy khuyến mãi hiện tại (đang trong thời gian áp dụng) =====
     public List<Promotion> getCurrentPromotions() {
-        return promotionRepository.findActivePromotions(LocalDate.now());
+        LocalDate today = LocalDate.now();
+
+        return promotionRepository.findAll().stream()
+                .filter(p -> p.getIsActive() != null && p.getIsActive())
+                .filter(p -> p.getStartDate() != null && !p.getStartDate().isAfter(today)) // đã bắt đầu
+                .filter(p -> p.getEndDate() != null && !p.getEndDate().isBefore(today)) // chưa kết thúc
+                .collect(Collectors.toList());
     }
 
     // === STATUS MANAGEMENT ===
@@ -151,6 +172,7 @@ public class PromotionService {
         return true;
     }
 
+    @Transactional
     public boolean removeProductFromPromotion(Long promotionId, Long productId) {
         promotionProductRepository.deleteByPromotionIdAndProductId(promotionId, productId);
         return true;
@@ -201,9 +223,9 @@ public class PromotionService {
         if (promotion.isPresent()) {
             Promotion promo = promotion.get();
             LocalDate today = LocalDate.now();
-            return promo.getIsActive() &&
-                    !today.isBefore(promo.getStartDate()) &&
-                    !today.isAfter(promo.getEndDate());
+            return promo.getIsActive() != null && promo.getIsActive() &&
+                    (promo.getStartDate() == null || !promo.getStartDate().isAfter(today)) &&
+                    (promo.getEndDate() == null || !promo.getEndDate().isBefore(today));
         }
         return false;
     }

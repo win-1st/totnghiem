@@ -38,4 +38,20 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
     List<Object[]> getTopProducts(
             @Param("startDate") LocalDateTime startDate,
             org.springframework.data.domain.Pageable pageable);
+
+    // ===== THÊM METHOD MỚI =====
+    @Query("""
+                SELECT oi.product.id, oi.product.name,
+                       SUM(oi.quantity), SUM(oi.quantity * oi.unitPrice)
+                FROM OrderItem oi
+                JOIN oi.order o
+                WHERE o.createdAt BETWEEN :startDate AND :endDate
+                  AND o.status = 'PAID'
+                GROUP BY oi.product.id, oi.product.name
+                ORDER BY SUM(oi.quantity * oi.unitPrice) DESC
+            """)
+    List<Object[]> getTopProductsBetween(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            org.springframework.data.domain.Pageable pageable);
 }

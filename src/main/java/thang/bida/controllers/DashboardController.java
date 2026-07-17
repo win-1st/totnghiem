@@ -21,11 +21,12 @@ public class DashboardController {
         private DashboardService dashboardService;
 
         @GetMapping("/overview")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA: cho phép STAFF
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getDashboardOverview(
-                        @RequestParam(required = false, defaultValue = "week") String timeRange) {
+                        @RequestParam(required = false, defaultValue = "week") String timeRange,
+                        @RequestParam(required = false) Integer year) { // THÊM tham số year
 
-                Map<String, Object> response = dashboardService.getDashboardOverview(timeRange);
+                Map<String, Object> response = dashboardService.getDashboardOverview(timeRange, year);
 
                 return ResponseEntity.ok(Map.of(
                                 "success", true,
@@ -34,7 +35,7 @@ public class DashboardController {
         }
 
         @GetMapping("/statistics/time-based")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getTimeBasedStatistics(
                         @RequestParam String timeRange,
                         @RequestParam(required = false) LocalDate startDate,
@@ -49,12 +50,13 @@ public class DashboardController {
         }
 
         @GetMapping("/top-products")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getTopProducts(
                         @RequestParam(required = false, defaultValue = "10") int limit,
-                        @RequestParam(required = false) String timeRange) {
+                        @RequestParam(required = false) String timeRange,
+                        @RequestParam(required = false) Integer year) { // THÊM tham số year
 
-                List<Map<String, Object>> topProducts = dashboardService.getTopProducts(limit, timeRange);
+                List<Map<String, Object>> topProducts = dashboardService.getTopProducts(limit, timeRange, year);
 
                 return ResponseEntity.ok(Map.of(
                                 "success", true,
@@ -64,7 +66,7 @@ public class DashboardController {
         }
 
         @GetMapping("/revenue/monthly")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getMonthlyRevenue(
                         @RequestParam(required = false) Integer year) {
 
@@ -77,7 +79,7 @@ public class DashboardController {
         }
 
         @GetMapping("/users/statistics")
-        @PreAuthorize("hasRole('ADMIN')") // GIỮ NGUYÊN - chỉ ADMIN
+        @PreAuthorize("hasRole('ADMIN')")
         public ResponseEntity<?> getUserStatistics() {
 
                 Map<String, Object> userStats = dashboardService.getUserStatistics();
@@ -89,7 +91,7 @@ public class DashboardController {
         }
 
         @GetMapping("/recent-activities")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getRecentActivities(
                         @RequestParam(required = false, defaultValue = "20") int limit) {
 
@@ -103,7 +105,7 @@ public class DashboardController {
         }
 
         @GetMapping("/tables/statistics")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getTableStatistics() {
 
                 Map<String, Object> tableStats = dashboardService.getTableStatistics();
@@ -115,7 +117,7 @@ public class DashboardController {
         }
 
         @GetMapping("/revenue/daily")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getDailyRevenue(
                         @RequestParam(required = false) LocalDate date) {
 
@@ -128,11 +130,12 @@ public class DashboardController {
         }
 
         @GetMapping("/orders/statistics")
-        @PreAuthorize("hasAnyRole('ADMIN','STAFF')") // SỬA
+        @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
         public ResponseEntity<?> getOrderStatistics(
-                        @RequestParam(required = false, defaultValue = "week") String timeRange) {
+                        @RequestParam(required = false, defaultValue = "week") String timeRange,
+                        @RequestParam(required = false) Integer year) { // THÊM tham số year
 
-                Map<String, Object> orderStats = dashboardService.getOrderStatistics(timeRange);
+                Map<String, Object> orderStats = dashboardService.getOrderStatistics(timeRange, year);
 
                 return ResponseEntity.ok(Map.of(
                                 "success", true,

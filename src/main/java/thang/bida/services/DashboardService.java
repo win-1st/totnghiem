@@ -40,35 +40,48 @@ public class DashboardService {
     private OrderItemRepository orderItemRepository;
 
     // ===== TỔNG QUAN DASHBOARD =====
-    public Map<String, Object> getDashboardOverview(String timeRange) {
-        LocalDate startDate = getStartDateByTimeRange(timeRange);
+    public Map<String, Object> getDashboardOverview(String timeRange, Integer year) {
+        LocalDate startDate;
+        LocalDate endDate = LocalDate.now();
+
+        if (year != null && "year".equalsIgnoreCase(timeRange)) {
+            startDate = LocalDate.of(year, 1, 1);
+            endDate = LocalDate.of(year, 12, 31);
+        } else {
+            startDate = getStartDateByTimeRange(timeRange);
+        }
 
         Map<String, Object> response = new HashMap<>();
 
         long totalUsers = userRepository.count();
         long newUsers = userRepository.countByCreatedAtAfter(startDate.atStartOfDay());
 
-        long totalOrders = orderRepository.count();
+        long totalOrders = orderRepository.countByCreatedAtBetween(
+                startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
         long newOrders = orderRepository.countByCreatedAtAfter(startDate.atStartOfDay());
 
-        BigDecimal totalRevenue = billRepository.getTotalRevenue();
+        BigDecimal totalRevenue = billRepository.getRevenueBetween(
+                startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
         if (totalRevenue == null) {
             totalRevenue = BigDecimal.ZERO;
         }
 
-        BigDecimal periodRevenue = billRepository.getRevenueAfter(startDate.atStartOfDay());
-        if (periodRevenue == null) {
-            periodRevenue = BigDecimal.ZERO;
-        }
+        BigDecimal periodRevenue = totalRevenue;
 
         long totalProducts = productRepository.countByActiveTrue();
         long activeTables = bidaTableRepository.countByStatus(BidaTable.TableStatus.OCCUPIED);
 
-        BigDecimal previousPeriodRevenue = billRepository.getRevenueBetween(
-                startDate.minusDays(getDaysByTimeRange(timeRange)).atStartOfDay(),
-                startDate.atStartOfDay());
-        if (previousPeriodRevenue == null) {
-            previousPeriodRevenue = BigDecimal.ZERO;
+        // Tính growth rate so với năm trước
+        BigDecimal previousPeriodRevenue = BigDecimal.ZERO;
+        if (year != null && "year".equalsIgnoreCase(timeRange)) {
+            LocalDate prevYearStart = LocalDate.of(year - 1, 1, 1);
+            LocalDate prevYearEnd = LocalDate.of(year - 1, 12, 31);
+            previousPeriodRevenue = billRepository.getRevenueBetween(
+                    prevYearStart.atStartOfDay(),
+                    prevYearEnd.atTime(23, 59, 59));
+            if (previousPeriodRevenue == null) {
+                previousPeriodRevenue = BigDecimal.ZERO;
+            }
         }
 
         BigDecimal growthRate = BigDecimal.ZERO;
@@ -88,6 +101,7 @@ public class DashboardService {
         response.put("activeTables", activeTables);
         response.put("growthRate", growthRate);
         response.put("timeRange", timeRange);
+        response.put("year", year);
 
         return response;
     }
@@ -109,7 +123,16 @@ public class DashboardService {
         if (dailyRevenue != null) {
             revenueByDate = dailyRevenue.stream()
                     .collect(Collectors.toMap(
-                            arr -> ((java.sql.Date) arr[0]).toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM")),
+                            arr -> {
+                                Object dateObj = arr[0];
+                                if (dateObj instanceof java.sql.Date) {
+                                    return ((java.sql.Date) dateObj).toLocalDate()
+                                            .format(DateTimeFormatter.ofPattern("dd/MM"));
+                                } else if (dateObj instanceof LocalDate) {
+                                    return ((LocalDate) dateObj).format(DateTimeFormatter.ofPattern("dd/MM"));
+                                }
+                                return arr[0].toString();
+                            },
                             arr -> {
                                 BigDecimal revenue = (BigDecimal) arr[1];
                                 return revenue != null ? revenue : BigDecimal.ZERO;
@@ -121,8 +144,20 @@ public class DashboardService {
         if (dailyOrders != null) {
             ordersByDate = dailyOrders.stream()
                     .collect(Collectors.toMap(
-                            arr -> ((java.sql.Date) arr[0]).toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM")),
-                            arr -> (Long) arr[1]));
+                            arr -> {
+                                Object dateObj = arr[0];
+                                if (dateObj instanceof java.sql.Date) {
+                                    return ((java.sql.Date) dateObj).toLocalDate()
+                                            .format(DateTimeFormatter.ofPattern("dd/MM"));
+                                } else if (dateObj instanceof LocalDate) {
+                                    return ((LocalDate) dateObj).format(DateTimeFormatter.ofPattern("dd/MM"));
+                                }
+                                return arr[0].toString();
+                            },
+                            arr -> {
+                                Long count = (Long) arr[1];
+                                return count != null ? count : 0L;
+                            }));
         }
 
         BigDecimal totalRevenue = billRepository.getRevenueBetween(startDateTime, endDateTime);
@@ -139,12 +174,25 @@ public class DashboardService {
     }
 
     // ===== TOP SẢN PHẨM BÁN CHẠY =====
-    public List<Map<String, Object>> getTopProducts(int limit, String timeRange) {
-        LocalDateTime startDate = getStartDateByTimeRange(timeRange).atStartOfDay();
+    public List<Map<String, Object>> getTopProducts(int limit, String timeRange, Integer year) {
+        LocalDateTime startDate;
+        LocalDateTime endDate = LocalDateTime.now();
+
+        if (year != null && "year".equalsIgnoreCase(timeRange)) {
+            startDate = LocalDate.of(year, 1, 1).atStartOfDay();
+            endDate = LocalDate.of(year, 12, 31).atTime(23, 59, 59);
+        } else {
+            startDate = getStartDateByTimeRange(timeRange).atStartOfDay();
+        }
 
         Pageable pageable = PageRequest.of(0, limit);
 
-        List<Object[]> topProductsData = orderItemRepository.getTopProducts(startDate, pageable);
+        List<Object[]> topProductsData;
+        try {
+            topProductsData = orderItemRepository.getTopProductsBetween(startDate, endDate, pageable);
+        } catch (Exception e) {
+            topProductsData = orderItemRepository.getTopProducts(startDate, pageable);
+        }
 
         if (topProductsData == null || topProductsData.isEmpty()) {
             return new ArrayList<>();
@@ -152,10 +200,17 @@ public class DashboardService {
 
         return topProductsData.stream().map(arr -> {
             Map<String, Object> productMap = new HashMap<>();
-            productMap.put("id", arr[0]);
-            productMap.put("name", arr[1]);
-            productMap.put("soldQuantity", arr[2]);
-            productMap.put("revenue", arr[3]);
+            try {
+                productMap.put("id", arr[0] != null ? arr[0] : 0L);
+                productMap.put("name", arr[1] != null ? arr[1] : "Không xác định");
+                productMap.put("soldQuantity", arr[2] != null ? arr[2] : 0);
+                productMap.put("revenue", arr[3] != null ? arr[3] : BigDecimal.ZERO);
+            } catch (Exception e) {
+                productMap.put("id", 0L);
+                productMap.put("name", "Sản phẩm");
+                productMap.put("soldQuantity", 0);
+                productMap.put("revenue", BigDecimal.ZERO);
+            }
             return productMap;
         }).collect(Collectors.toList());
     }
@@ -182,13 +237,17 @@ public class DashboardService {
 
         if (monthlyData != null) {
             monthlyData.forEach(arr -> {
-                Integer month = (Integer) arr[0];
-                BigDecimal revenue = (BigDecimal) arr[1];
-                if (revenue == null) {
-                    revenue = BigDecimal.ZERO;
+                try {
+                    Integer month = (Integer) arr[0];
+                    BigDecimal revenue = (BigDecimal) arr[1];
+                    if (revenue == null) {
+                        revenue = BigDecimal.ZERO;
+                    }
+                    String monthKey = String.format("%02d/%d", month, year);
+                    result.put(monthKey, revenue);
+                } catch (Exception e) {
+                    // Bỏ qua nếu dữ liệu không đúng format
                 }
-                String monthKey = String.format("%02d/%d", month, year);
-                result.put(monthKey, revenue);
             });
         }
 
@@ -199,7 +258,6 @@ public class DashboardService {
     public Map<String, Object> getUserStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
-        // SỬA: Dùng countByRole thay vì countByRoles_Name
         long adminCount = userRepository.countByRole(Role.ADMIN);
         long staffCount = userRepository.countByRole(Role.STAFF);
         long customerCount = userRepository.countByRole(Role.CUSTOMER);
@@ -227,7 +285,7 @@ public class DashboardService {
         List<Map<String, Object>> activities = new ArrayList<>();
 
         List<Order> recentOrders = orderRepository.findTop10ByCreatedAtAfterOrderByCreatedAtDesc(cutoff);
-        if (recentOrders != null) {
+        if (recentOrders != null && !recentOrders.isEmpty()) {
             for (Order order : recentOrders) {
                 Map<String, Object> activity = new HashMap<>();
                 activity.put("time", order.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm")));
@@ -241,7 +299,7 @@ public class DashboardService {
         }
 
         List<Bill> recentBills = billRepository.findTop10ByCreatedAtAfterOrderByCreatedAtDesc(cutoff);
-        if (recentBills != null) {
+        if (recentBills != null && !recentBills.isEmpty()) {
             for (Bill bill : recentBills) {
                 Map<String, Object> activity = new HashMap<>();
                 activity.put("time", bill.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm")));
@@ -253,14 +311,14 @@ public class DashboardService {
         }
 
         List<User> recentUsers = userRepository.findTop5ByOrderByCreatedAtDesc();
-        if (recentUsers != null) {
+        if (recentUsers != null && !recentUsers.isEmpty()) {
             for (User user : recentUsers) {
                 if (user.getCreatedAt() != null && user.getCreatedAt().isAfter(cutoff)) {
                     Map<String, Object> activity = new HashMap<>();
                     activity.put("time", user.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm")));
                     activity.put("content", String.format("Người dùng mới: %s (%s)",
                             user.getFullName() != null ? user.getFullName() : user.getPhone(),
-                            user.getEmail()));
+                            user.getEmail() != null ? user.getEmail() : ""));
                     activity.put("color", "purple");
                     activities.add(activity);
                 }
@@ -341,11 +399,19 @@ public class DashboardService {
     }
 
     // ===== THỐNG KÊ ĐƠN HÀNG =====
-    public Map<String, Object> getOrderStatistics(String timeRange) {
+    public Map<String, Object> getOrderStatistics(String timeRange, Integer year) {
         Map<String, Object> stats = new HashMap<>();
-        LocalDate startDate = getStartDateByTimeRange(timeRange);
-        LocalDateTime startDateTime = startDate.atStartOfDay();
+
+        LocalDateTime startDateTime;
         LocalDateTime endDateTime = LocalDateTime.now();
+
+        if (year != null && "year".equalsIgnoreCase(timeRange)) {
+            startDateTime = LocalDate.of(year, 1, 1).atStartOfDay();
+            endDateTime = LocalDate.of(year, 12, 31).atTime(23, 59, 59);
+        } else {
+            LocalDate startDate = getStartDateByTimeRange(timeRange);
+            startDateTime = startDate.atStartOfDay();
+        }
 
         long totalOrders = orderRepository.countByCreatedAtBetween(startDateTime, endDateTime);
 
@@ -363,6 +429,47 @@ public class DashboardService {
             revenueFromPaidOrders = BigDecimal.ZERO;
         }
 
+        // Tính growth rate cho đơn hàng
+        BigDecimal ordersGrowth = BigDecimal.ZERO;
+        if (year != null && "year".equalsIgnoreCase(timeRange)) {
+            LocalDateTime prevYearStart = LocalDate.of(year - 1, 1, 1).atStartOfDay();
+            LocalDateTime prevYearEnd = LocalDate.of(year - 1, 12, 31).atTime(23, 59, 59);
+            long prevYearOrders = orderRepository.countByCreatedAtBetween(prevYearStart, prevYearEnd);
+            if (prevYearOrders > 0) {
+                ordersGrowth = BigDecimal.valueOf(totalOrders - prevYearOrders)
+                        .divide(BigDecimal.valueOf(prevYearOrders), 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+            }
+        }
+
+        // Tính growth rate cho giá trị trung bình
+        BigDecimal avgValueGrowth = BigDecimal.ZERO;
+        if (year != null && "year".equalsIgnoreCase(timeRange)) {
+            LocalDateTime prevYearStart = LocalDate.of(year - 1, 1, 1).atStartOfDay();
+            LocalDateTime prevYearEnd = LocalDate.of(year - 1, 12, 31).atTime(23, 59, 59);
+            BigDecimal prevYearRevenue = billRepository.getRevenueFromPaidOrders(prevYearStart, prevYearEnd);
+            if (prevYearRevenue == null) {
+                prevYearRevenue = BigDecimal.ZERO;
+            }
+
+            long prevYearOrders = orderRepository.countByCreatedAtBetween(prevYearStart, prevYearEnd);
+            BigDecimal prevYearAvg = BigDecimal.ZERO;
+            if (prevYearOrders > 0) {
+                prevYearAvg = prevYearRevenue.divide(BigDecimal.valueOf(prevYearOrders), 2, RoundingMode.HALF_UP);
+            }
+
+            BigDecimal currentAvg = BigDecimal.ZERO;
+            if (totalOrders > 0) {
+                currentAvg = revenueFromPaidOrders.divide(BigDecimal.valueOf(totalOrders), 2, RoundingMode.HALF_UP);
+            }
+
+            if (prevYearAvg.compareTo(BigDecimal.ZERO) > 0) {
+                avgValueGrowth = currentAvg.subtract(prevYearAvg)
+                        .divide(prevYearAvg, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+            }
+        }
+
         stats.put("totalOrders", totalOrders);
         stats.put("openOrders", openOrders);
         stats.put("waitingPaymentOrders", waitingPaymentOrders);
@@ -370,6 +477,9 @@ public class DashboardService {
         stats.put("cancelledOrders", cancelledOrders);
         stats.put("revenueFromPaidOrders", revenueFromPaidOrders);
         stats.put("timeRange", timeRange);
+        stats.put("year", year);
+        stats.put("ordersGrowth", ordersGrowth);
+        stats.put("avgValueGrowth", avgValueGrowth);
 
         return stats;
     }
@@ -390,6 +500,10 @@ public class DashboardService {
                 return now.minusDays(7);
             case "MONTH":
                 return now.minusMonths(1);
+            case "QUARTER":
+                return now.minusMonths(3);
+            case "YEAR":
+                return now.minusYears(1);
             default:
                 return now.minusDays(7);
         }
