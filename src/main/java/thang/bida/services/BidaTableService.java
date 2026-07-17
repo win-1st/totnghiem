@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import thang.bida.dto.TableDTO;
+import thang.bida.dto.TableRequest;
 import thang.bida.model.BidaTable;
 import thang.bida.repository.BidaTableRepository;
 import thang.bida.repository.OrderRepository;
@@ -31,24 +32,18 @@ public class BidaTableService {
         return tableRepository.findByStatus(BidaTable.TableStatus.FREE);
     }
 
-    // Lấy bàn đang sử dụng (OCCUPIED)
     public List<BidaTable> getOccupiedTables() {
         return tableRepository.findByStatus(BidaTable.TableStatus.OCCUPIED);
     }
 
-    // Lấy bàn đã đặt (RESERVED)
     public List<BidaTable> getReservedTables() {
         return tableRepository.findByStatus(BidaTable.TableStatus.RESERVED);
     }
 
-    // ========== THÊM METHOD NÀY ==========
-    // Lấy bàn đang bảo trì (MAINTENANCE)
     public List<BidaTable> getMaintenanceTables() {
         return tableRepository.findByStatus(BidaTable.TableStatus.MAINTENANCE);
     }
-    // ========== END ==========
 
-    // Lấy bàn theo trạng thái (tổng quát)
     public List<BidaTable> getTablesByStatus(BidaTable.TableStatus status) {
         return tableRepository.findByStatus(status);
     }
@@ -66,6 +61,33 @@ public class BidaTableService {
         if (existingTable != null) {
             throw new RuntimeException("Số bàn " + table.getNumber() + " đã tồn tại!");
         }
+        return tableRepository.save(table);
+    }
+
+    // =====================================================
+    // ✅ THÊM METHOD CẬP NHẬT BÀN
+    // =====================================================
+    @Transactional
+    public BidaTable updateTable(Long id, TableRequest request) {
+        BidaTable table = tableRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn với ID: " + id));
+
+        // Kiểm tra số bàn trùng (nếu thay đổi số bàn)
+        if (!table.getNumber().equals(request.getNumber())) {
+            BidaTable existingTable = tableRepository.findByNumber(request.getNumber());
+            if (existingTable != null) {
+                throw new RuntimeException("Số bàn " + request.getNumber() + " đã tồn tại!");
+            }
+        }
+
+        // Cập nhật thông tin
+        table.setTableName(request.getName() != null ? request.getName() : "Bàn " + request.getNumber());
+        table.setNumber(request.getNumber());
+        table.setCapacity(request.getCapacity());
+        if (request.getType() != null) {
+            table.setType(request.getType());
+        }
+
         return tableRepository.save(table);
     }
 

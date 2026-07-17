@@ -25,9 +25,7 @@ public class BidaTableController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF','CUSTOMER')")
     public ResponseEntity<?> getAllTables() {
-        // SỬA: Dùng DTO thay vì entity
         List<TableDTO> tables = tableService.getAllTableDTO();
 
         Map<String, Object> response = new HashMap<>();
@@ -39,7 +37,7 @@ public class BidaTableController {
     }
 
     @GetMapping("/status/{state}")
-    @PreAuthorize("permitAll()") // Cho phép tất cả (kể cả chưa đăng nhập)
+    @PreAuthorize("permitAll()")
     public ResponseEntity<?> getTablesByStatus(@PathVariable String state) {
         List<BidaTable> tables;
 
@@ -116,7 +114,7 @@ public class BidaTableController {
             table.setNumber(request.getNumber());
             table.setCapacity(request.getCapacity());
             table.setStatus(BidaTable.TableStatus.FREE);
-            table.setType("STANDARD");
+            table.setType(request.getType() != null ? request.getType() : "STANDARD");
             table.setVersion(0);
 
             BidaTable savedTable = tableService.createTable(table);
@@ -125,6 +123,31 @@ public class BidaTableController {
             response.put("success", true);
             response.put("message", "Thêm bàn thành công");
             response.put("data", savedTable);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    // =====================================================
+    // ✅ THÊM ENDPOINT CẬP NHẬT BÀN
+    // =====================================================
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN')")
+    public ResponseEntity<?> updateTable(
+            @PathVariable Long id,
+            @RequestBody TableRequest request) {
+        try {
+            BidaTable updatedTable = tableService.updateTable(id, request);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Cập nhật bàn thành công");
+            response.put("data", updatedTable);
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {

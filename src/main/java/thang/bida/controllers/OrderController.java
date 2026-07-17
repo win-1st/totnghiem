@@ -87,6 +87,32 @@ public class OrderController {
         return ResponseEntity.ok(Map.of("success", true, "data", result, "count", result.size()));
     }
 
+    @PatchMapping("/{orderId}/move-to-table")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public ResponseEntity<?> moveOrderToTable(
+            @PathVariable Long orderId,
+            @RequestParam Long targetTableId) {
+        System.out.println("=== MOVE ORDER TO TABLE ===");
+        System.out.println("Order ID: " + orderId);
+        System.out.println("Target Table ID: " + targetTableId);
+
+        try {
+            Order updatedOrder = orderService.moveOrderToTable(orderId, targetTableId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Chuyển đơn sang bàn mới thành công");
+            response.put("data", updatedOrder);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
     @PatchMapping("/{orderId}/status")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public ResponseEntity<Order> updateOrderStatus(

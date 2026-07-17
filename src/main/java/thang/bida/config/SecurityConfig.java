@@ -63,6 +63,7 @@ public class SecurityConfig {
 
                                                 // ✅ THÊM: Cho phép chat public (không cần đăng nhập)
                                                 .requestMatchers("/api/chat/**").permitAll()
+                                                .requestMatchers(HttpMethod.GET, "/api/tables/**").permitAll()
 
                                                 // OPTIONS cho tất cả
                                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -81,8 +82,6 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.GET, "/api/categories/**")
                                                 .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
                                                 .requestMatchers(HttpMethod.GET, "/api/product-types/**")
-                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
-                                                .requestMatchers(HttpMethod.GET, "/api/tables/**")
                                                 .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
 
                                                 .requestMatchers(HttpMethod.GET, "/api/promotions/active")

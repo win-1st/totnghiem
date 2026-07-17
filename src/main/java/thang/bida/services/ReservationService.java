@@ -8,8 +8,10 @@ import thang.bida.repository.BidaTableRepository;
 import thang.bida.repository.ReservationRepository;
 import thang.bida.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -27,9 +29,11 @@ public class ReservationService {
     @Autowired
     private UserRepository userRepository;
 
-    // ========== THÊM MỚI ==========
     @Autowired
     private WebSocketService webSocketService;
+
+    @Autowired
+    private OrderService orderService;
 
     // ========== CONVERT TO DTO ==========
     private ReservationDTO convertToDTO(Reservation reservation) {
@@ -51,6 +55,7 @@ public class ReservationService {
         dto.setIsDepositPaid(reservation.getIsDepositPaid());
         dto.setCreatedAt(reservation.getCreatedAt() != null ? reservation.getCreatedAt().toString() : null);
         dto.setUpdatedAt(reservation.getUpdatedAt() != null ? reservation.getUpdatedAt().toString() : null);
+        dto.setTableType(reservation.getTable().getType());
         return dto;
     }
 
@@ -198,7 +203,46 @@ public class ReservationService {
 
         Reservation saved = reservationRepository.save(reservation);
 
-        // ========== WEBSOCKET NOTIFICATION ==========
+        // ========== CẬP NHẬT TRẠNG THÁI BÀN ==========
+        // ✅ CHỈ cập nhật khi đặt cho HÔM NAY và bàn đang FREE
+        LocalDate today = LocalDate.now();
+        LocalDate reservationDate = dto.getReservationDate();
+
+        // Kiểm tra: Đặt cho hôm nay
+        if (reservationDate.equals(today)) {
+            BidaTable currentTable = bidaTableRepository.findById(dto.getTableId()).orElse(null);
+
+            if (currentTable != null) {
+                // Kiểm tra bàn đang FREE
+                if (currentTable.getStatus() == BidaTable.TableStatus.FREE) {
+                    // Kiểm tra không có order active
+                    boolean hasActiveOrder = orderService.hasActiveOrder(currentTable.getId());
+                    if (!hasActiveOrder) {
+                        currentTable.setStatus(BidaTable.TableStatus.RESERVED);
+                        bidaTableRepository.save(currentTable);
+                        System.out.println("✅ Table " + currentTable.getNumber() + " -> RESERVED (đặt hôm nay)");
+                    } else {
+                        System.out.println("⚠️ Table " + currentTable.getNumber() + " đang có order, không thể đặt");
+                        throw new RuntimeException("Bàn đang có khách, không thể đặt!");
+                    }
+                } else if (currentTable.getStatus() == BidaTable.TableStatus.OCCUPIED) {
+                    System.out.println("❌ Table " + currentTable.getNumber() + " đang có khách, không thể đặt hôm nay");
+                    throw new RuntimeException("Bàn đang có khách, không thể đặt cho hôm nay!");
+                } else if (currentTable.getStatus() == BidaTable.TableStatus.RESERVED) {
+                    System.out.println("❌ Table " + currentTable.getNumber() + " đã được đặt");
+                    throw new RuntimeException("Bàn đã được đặt trước!");
+                } else if (currentTable.getStatus() == BidaTable.TableStatus.MAINTENANCE) {
+                    System.out.println("❌ Table " + currentTable.getNumber() + " đang bảo trì");
+                    throw new RuntimeException("Bàn đang bảo trì, không thể đặt!");
+                }
+            }
+        } else {
+            // ✅ Đặt cho ngày khác (ngày mai, ngày kia...)
+            // KHÔNG cập nhật trạng thái bàn
+            System.out.println("📅 Đặt cho ngày " + reservationDate + " - KHÔNG cập nhật bàn");
+        }
+
+        // Gửi WebSocket notification
         sendTableStatusNotification(saved, "RESERVED");
 
         return convertToDTO(saved);
@@ -246,61 +290,134 @@ public class ReservationService {
         return convertToDTO(saved);
     }
 
-    // Xác nhận đặt bàn
+    // ========== XÁC NHẬN ĐẶT BÀN ==========
     @Transactional
     public ReservationDTO confirmReservation(Long id) {
+        System.out.println("=== CONFIRM RESERVATION ===");
+        System.out.println("Reservation ID: " + id);
+
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
+
+        System.out.println("Current status: " + reservation.getStatus());
+
+        // ✅ CHỈ CẬP NHẬT RESERVATION, KHÔNG CẬP NHẬT BÀN
         reservation.confirm();
         Reservation saved = reservationRepository.save(reservation);
 
-        // ========== WEBSOCKET NOTIFICATION ==========
-        sendTableStatusNotification(saved, "RESERVED");
+        System.out.println("✅ Reservation " + id + " status -> CONFIRMED");
+        System.out.println("Table " + reservation.getTable().getNumber() + " status remains "
+                + reservation.getTable().getStatus());
 
         return convertToDTO(saved);
     }
 
-    // Hủy đặt bàn
+    // ========== HỦY ĐẶT BÀN ==========
     @Transactional
     public ReservationDTO cancelReservation(Long id, String reason) {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
+
         reservation.cancel(reason);
         Reservation saved = reservationRepository.save(reservation);
 
-        // ========== WEBSOCKET NOTIFICATION ==========
+        // ========== CẬP NHẬT TRẠNG THÁI BÀN KHI HỦY ==========
+        // ✅ CHỈ cập nhật nếu đặt cho HÔM NAY và bàn đang RESERVED
+        LocalDate today = LocalDate.now();
+        LocalDate reservationDate = reservation.getReservationDate();
+
+        if (reservationDate.equals(today)) {
+            BidaTable table = reservation.getTable();
+            if (table.getStatus() == BidaTable.TableStatus.RESERVED) {
+                table.setStatus(BidaTable.TableStatus.FREE);
+                bidaTableRepository.save(table);
+                System.out.println("✅ Table " + table.getNumber() + " -> FREE (hủy đặt hôm nay)");
+            }
+        } else {
+            System.out.println("📅 Hủy đặt cho ngày " + reservationDate + " - KHÔNG cập nhật bàn");
+        }
+
+        // Gửi WebSocket notification
         sendTableStatusNotification(saved, "FREE");
 
         return convertToDTO(saved);
     }
 
-    // Check-in
+    // ========== CHECK-IN ==========
     @Transactional
     public ReservationDTO checkIn(Long id) {
         Reservation reservation = reservationRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn với ID: " + id));
+
+        System.out.println("=== CHECK-IN ===");
+        System.out.println("Reservation ID: " + id);
+        System.out.println("Current status: " + reservation.getStatus());
+
+        // ✅ Nếu đã CHECKED_IN, trả về luôn
+        if (reservation.getStatus() == Reservation.ReservationStatus.CHECKED_IN) {
+            System.out.println("⚠️ Reservation already checked in!");
+            return convertToDTO(reservation);
+        }
+
+        // ✅ Cho phép check-in từ PENDING hoặc CONFIRMED
+        if (reservation.getStatus() == Reservation.ReservationStatus.PENDING) {
+            System.out.println("⚠️ Reservation is PENDING, auto-confirming...");
+            reservation.confirm();
+            reservationRepository.save(reservation);
+            System.out.println("✅ Auto-confirmed to CONFIRMED");
+        } else if (reservation.getStatus() != Reservation.ReservationStatus.CONFIRMED) {
+            throw new RuntimeException("Đặt bàn không thể check-in! Trạng thái hiện tại: " + reservation.getStatus());
+        }
+
+        // 1. Cập nhật reservation thành CHECKED_IN
         reservation.checkIn();
         Reservation saved = reservationRepository.save(reservation);
+        System.out.println("✅ Reservation status updated to CHECKED_IN");
 
-        // ========== WEBSOCKET NOTIFICATION ==========
+        // 2. Cập nhật trạng thái bàn thành OCCUPIED
+        BidaTable table = reservation.getTable();
+        table.setStatus(BidaTable.TableStatus.OCCUPIED);
+        bidaTableRepository.save(table);
+        System.out.println("✅ Table " + table.getNumber() + " status -> OCCUPIED");
+
+        // ❌ KHÔNG TẠO ORDER, KHÔNG THÊM SP GÌ CẢ
+        // Staff sẽ tự vào bàn và thêm món sau
+
+        // 3. Gửi WebSocket notification
         sendTableStatusNotification(saved, "OCCUPIED");
 
         return convertToDTO(saved);
     }
 
-    // Xóa đặt bàn
+    // ========== XÓA ĐẶT BÀN ==========
     @Transactional
     public void deleteReservation(Long id) {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đặt bàn"));
 
         Long tableId = reservation.getTable().getId();
+        LocalDate reservationDate = reservation.getReservationDate();
+        LocalDate today = LocalDate.now();
+
         reservationRepository.delete(reservation);
 
-        // ========== WEBSOCKET NOTIFICATION ==========
+        // ========== CẬP NHẬT TRẠNG THÁI BÀN KHI XÓA ==========
+        // ✅ CHỈ cập nhật nếu đặt cho HÔM NAY
+        if (reservationDate.equals(today)) {
+            BidaTable table = bidaTableRepository.findById(tableId).orElse(null);
+            if (table != null && table.getStatus() == BidaTable.TableStatus.RESERVED) {
+                table.setStatus(BidaTable.TableStatus.FREE);
+                bidaTableRepository.save(table);
+                System.out.println("✅ Table " + table.getNumber() + " -> FREE (xóa đặt hôm nay)");
+            }
+        } else {
+            System.out.println("📅 Xóa đặt cho ngày " + reservationDate + " - KHÔNG cập nhật bàn");
+        }
+
+        // Gửi WebSocket notification
         try {
             webSocketService.notifyTableStatus(tableId, "FREE");
-            System.out.println("✅ WebSocket sent: Table " + tableId + " status -> FREE (deleted)");
+            System.out.println("✅ WebSocket sent: Table " + tableId + " status -> FREE");
         } catch (Exception e) {
             System.err.println("⚠️ WebSocket notification failed: " + e.getMessage());
         }
@@ -313,11 +430,32 @@ public class ReservationService {
             String tableNumber = reservation.getTable().getNumber() != null
                     ? reservation.getTable().getNumber().toString()
                     : "?";
+            LocalDate reservationDate = reservation.getReservationDate();
 
-            webSocketService.notifyTableStatus(tableId, status);
-            System.out.println("✅ WebSocket sent: Table " + tableNumber + " (ID:" + tableId + ") status -> " + status);
+            // Tạo message với thông tin ngày đặt
+            WebSocketService.TableStatusMessage message = new WebSocketService.TableStatusMessage(tableId, status);
+            message.setCustomerName(reservation.getCustomerName());
+            message.setReservationDate(reservationDate);
+
+            webSocketService.sendTableStatusMessage(message);
+            System.out.println("✅ WebSocket sent: Table " + tableNumber + " (ID:" + tableId + ") status -> " + status
+                    + " for date " + reservationDate);
         } catch (Exception e) {
             System.err.println("⚠️ WebSocket notification failed: " + e.getMessage());
         }
+    }
+
+    // ========== PRIVATE HELPER: LẤY USER HIỆN TẠI ==========
+    private User getCurrentUser() {
+        try {
+            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            if (principal instanceof UserDetailsImpl) {
+                Long userId = ((UserDetailsImpl) principal).getId();
+                return userRepository.findById(userId).orElse(null);
+            }
+        } catch (Exception e) {
+            System.err.println("⚠️ Cannot get current user: " + e.getMessage());
+        }
+        return null;
     }
 }

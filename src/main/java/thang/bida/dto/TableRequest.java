@@ -10,4 +10,5 @@ public class TableRequest {
     private String name;
     private Integer number;
     private Integer capacity;
+    private String type;
 }

@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 
 import thang.bida.model.Order;
 
+import java.time.LocalDate;
+
 @Service
 public class WebSocketService {
 
@@ -27,9 +29,20 @@ public class WebSocketService {
                 new TableStatusMessage(tableId, status));
     }
 
+    // 🆕 Thêm method này để gửi message với đầy đủ thông tin
+    public void sendTableStatusMessage(TableStatusMessage message) {
+        messagingTemplate.convertAndSend("/topic/table-status", message);
+    }
+
+    // ========== INNER CLASS ==========
     public static class TableStatusMessage {
         private Long tableId;
         private String status;
+        private String customerName;
+        private LocalDate reservationDate;
+
+        public TableStatusMessage() {
+        }
 
         public TableStatusMessage(Long tableId, String status) {
             this.tableId = tableId;
@@ -51,6 +64,32 @@ public class WebSocketService {
 
         public void setStatus(String status) {
             this.status = status;
+        }
+
+        public String getCustomerName() {
+            return customerName;
+        }
+
+        public void setCustomerName(String customerName) {
+            this.customerName = customerName;
+        }
+
+        public LocalDate getReservationDate() {
+            return reservationDate;
+        }
+
+        public void setReservationDate(LocalDate reservationDate) {
+            this.reservationDate = reservationDate;
+        }
+
+        @Override
+        public String toString() {
+            return "TableStatusMessage{" +
+                    "tableId=" + tableId +
+                    ", status='" + status + '\'' +
+                    ", customerName='" + customerName + '\'' +
+                    ", reservationDate=" + reservationDate +
+                    '}';
         }
     }
 }

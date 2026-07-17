@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.*;
 
 import thang.bida.model.Promotion;
 import thang.bida.model.Product;
-import thang.bida.model.PromotionProduct;
 import thang.bida.services.PromotionService;
 
 import java.util.HashMap;

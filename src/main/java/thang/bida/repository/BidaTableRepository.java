@@ -16,4 +16,6 @@ public interface BidaTableRepository extends JpaRepository<BidaTable, Long> {
     List<BidaTable> findByCapacityGreaterThanEqual(Integer capacity);
 
     Long countByStatus(BidaTable.TableStatus status);
+
+    boolean existsByNumber(Integer number);
 }

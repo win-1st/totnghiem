@@ -66,43 +66,116 @@ public class OrderService {
     }
 
     // =====================================================
+    // CHECK ORDER STATUS (🆕 THÊM CÁC METHOD NÀY)
+    // =====================================================
+
+    /**
+     * Kiểm tra xem bàn có đang có order active không (OPEN hoặc WAITING_PAYMENT)
+     */
+    public boolean hasActiveOrder(Long tableId) {
+        List<Order> orders = orderRepository.findByTableIdWithItems(tableId);
+        return orders.stream()
+                .anyMatch(o -> o.getStatus() == OrderStatus.OPEN ||
+                        o.getStatus() == OrderStatus.WAITING_PAYMENT);
+    }
+
+    /**
+     * Lấy order active của bàn (OPEN hoặc WAITING_PAYMENT)
+     */
+    public Order getActiveOrder(Long tableId) {
+        List<Order> orders = orderRepository.findByTableIdWithItems(tableId);
+        return orders.stream()
+                .filter(o -> o.getStatus() == OrderStatus.OPEN ||
+                        o.getStatus() == OrderStatus.WAITING_PAYMENT)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Kiểm tra bàn có đang OCCUPIED không
+     */
+    public boolean isTableOccupied(Long tableId) {
+        BidaTable table = tableRepository.findById(tableId).orElse(null);
+        if (table == null)
+            return false;
+        return table.getStatus() == BidaTable.TableStatus.OCCUPIED;
+    }
+
+    /**
+     * Kiểm tra bàn có đang FREE không
+     */
+    public boolean isTableFree(Long tableId) {
+        BidaTable table = tableRepository.findById(tableId).orElse(null);
+        if (table == null)
+            return false;
+        return table.getStatus() == BidaTable.TableStatus.FREE;
+    }
+
+    // =====================================================
     // OPEN ORDER
     // =====================================================
 
     @Transactional(rollbackFor = Exception.class)
     public Order openOrder(Long tableId, Long employeeId) {
+        System.out.println("=== OPEN ORDER ===");
+        System.out.println("Table ID: " + tableId);
+        System.out.println("Employee ID: " + employeeId);
+
         BidaTable table = tableRepository.findById(tableId)
                 .orElseThrow(() -> new RuntimeException("Table not found"));
+
+        System.out.println("Table status: " + table.getStatus());
+        System.out.println("Table number: " + table.getNumber());
 
         User employee = userRepository.findById(employeeId)
                 .orElseThrow(() -> new RuntimeException("Employee not found"));
 
-        if (table.getStatus() != BidaTable.TableStatus.FREE) {
-            throw new RuntimeException("Bàn không trống");
+        // ✅ Kiểm tra: Nếu bàn OCCUPIED nhưng không có order active, vẫn cho mở
+        // Lý do: Bàn có thể đã OCCUPIED từ check-in nhưng chưa tạo order
+        if (table.getStatus() == BidaTable.TableStatus.OCCUPIED) {
+            // Kiểm tra xem đã có order active chưa
+            boolean hasActiveOrder = hasActiveOrder(tableId);
+            if (hasActiveOrder) {
+                System.out.println("❌ Table is OCCUPIED and has active order");
+                throw new RuntimeException("Bàn đã có khách và đã có order!");
+            } else {
+                System.out.println("⚠️ Table is OCCUPIED but no active order - allowing order creation");
+                // Vẫn cho phép tạo order mới
+            }
+        } else if (table.getStatus() != BidaTable.TableStatus.FREE &&
+                table.getStatus() != BidaTable.TableStatus.RESERVED) {
+            System.out.println("❌ Table status is " + table.getStatus() + ", cannot open order");
+            throw new RuntimeException("Không thể mở bàn ở trạng thái: " + table.getStatus());
         }
 
+        // Tạo order mới
         Order order = new Order();
         order.setTable(table);
         order.setEmployee(employee);
         order.setStatus(OrderStatus.OPEN);
-        order.setStartTime(null);
+        order.setStartTime(LocalDateTime.now()); // ✅ Bắt đầu tính thời gian ngay
         order.setTotalAmount(BigDecimal.ZERO);
         order.setTableFee(BigDecimal.ZERO);
         order.setProductFee(BigDecimal.ZERO);
         order.setStockDeducted(false);
 
         Order saved = orderRepository.save(order);
+        System.out.println("✅ Order created: " + saved.getId());
 
-        table.setStatus(BidaTable.TableStatus.OCCUPIED);
-        tableRepository.save(table);
+        // ✅ Đảm bảo bàn đang OCCUPIED
+        if (table.getStatus() != BidaTable.TableStatus.OCCUPIED) {
+            table.setStatus(BidaTable.TableStatus.OCCUPIED);
+            tableRepository.save(table);
+            System.out.println("✅ Table " + table.getNumber() + " status -> OCCUPIED");
+        }
 
+        // Gửi notification
         webSocketService.notifyTableStatus(table.getId(), "OCCUPIED");
         webSocketService.notifyOrderUpdate(saved);
 
         log.info("✅ Order {} opened for table {}", saved.getId(), tableId);
         return saved;
     }
-
     // =====================================================
     // ADD ITEM TO ORDER
     // =====================================================
@@ -563,5 +636,70 @@ public class OrderService {
         webSocketService.notifyOrderUpdate(order);
 
         log.info("✅ Time adjusted successfully for order {}", orderId);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Order moveOrderToTable(Long orderId, Long targetTableId) {
+        log.info("=== MOVE ORDER TO TABLE ===");
+        log.info("Order ID: {}", orderId);
+        log.info("Target Table ID: {}", targetTableId);
+
+        // 1. Lấy order hiện tại
+        Order order = getOrderById(orderId);
+
+        // 2. Kiểm tra trạng thái order
+        if (order.getStatus() == OrderStatus.PAID) {
+            throw new RuntimeException("Không thể chuyển đơn đã thanh toán");
+        }
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            throw new RuntimeException("Không thể chuyển đơn đã hủy");
+        }
+
+        // 3. Lấy bàn đích
+        BidaTable targetTable = tableRepository.findById(targetTableId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bàn đích"));
+
+        // 4. Kiểm tra bàn đích có trống không
+        if (targetTable.getStatus() != BidaTable.TableStatus.FREE) {
+            throw new RuntimeException("Bàn đích không trống (trạng thái: " + targetTable.getStatus() + ")");
+        }
+
+        // 5. Lưu bàn cũ
+        BidaTable oldTable = order.getTable();
+
+        // 6. Cập nhật bàn mới cho order
+        order.setTable(targetTable);
+        order = orderRepository.save(order);
+        log.info("✅ Order {} moved to table {}", orderId, targetTableId);
+
+        // 7. Cập nhật trạng thái bàn mới thành OCCUPIED
+        targetTable.setStatus(BidaTable.TableStatus.OCCUPIED);
+        tableRepository.save(targetTable);
+        log.info("✅ Table {} status -> OCCUPIED", targetTable.getNumber());
+
+        // 8. Cập nhật trạng thái bàn cũ
+        if (oldTable != null) {
+            // Kiểm tra xem bàn cũ có order active khác không
+            boolean hasOtherActiveOrder = orderRepository.findByTableIdAndStatusNot(
+                    oldTable.getId(), OrderStatus.PAID).stream().anyMatch(
+                            o -> o.getStatus() == OrderStatus.OPEN ||
+                                    o.getStatus() == OrderStatus.WAITING_PAYMENT);
+
+            if (!hasOtherActiveOrder) {
+                oldTable.setStatus(BidaTable.TableStatus.FREE);
+                tableRepository.save(oldTable);
+                log.info("✅ Old table {} status -> FREE", oldTable.getNumber());
+                webSocketService.notifyTableStatus(oldTable.getId(), "FREE");
+            } else {
+                log.info("⚠️ Old table {} still has active orders, keeping OCCUPIED", oldTable.getNumber());
+            }
+        }
+
+        // 9. Notify WebSocket
+        webSocketService.notifyTableStatus(targetTable.getId(), "OCCUPIED");
+        webSocketService.notifyOrderUpdate(order);
+
+        log.info("✅ Successfully moved order {} to table {}", orderId, targetTableId);
+        return order;
     }
 }
